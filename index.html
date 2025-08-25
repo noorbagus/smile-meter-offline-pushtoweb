@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" href="/images/favicon.ico" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Web AR Netramaya</title>
+    
+    <!-- Meta tags for social sharing -->
+    <meta name="description" content="Solusi cerdas campaign interactive di instagram! Ga pusing lagi sama META yang hapus filter IG" />
+    <meta property="og:title" content="Web AR Netramaya" />
+    <meta property="og:description" content="Solusi cerdas campaign interactive di instagram! Ga pusing lagi sama META yang hapus filter IG" />
+    <meta property="og:type" content="website" />
+    <meta property="og:image" content="https://ar.netramaya.com/images/webar-netramaya.png" />
+    <meta property="og:url" content="https://ar.netramaya.com/" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:image" content="https://ar.netramaya.com/images/webar.png" />
+    
+    <!-- PWA Meta -->
+    <meta name="theme-color" content="#000000" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    
+    <!-- Camera and microphone permissions -->
+    <meta http-equiv="Permissions-Policy" content="camera=*, microphone=*" />
+  </head>
+  <body>
+    <div id="root"></div>
+    
+    <!-- AGGRESSIVE INSTAGRAM REDIRECT SCRIPT -->
+    <script>
+      // Immediate redirect check before React loads
+      (function() {
+        // Enhanced Instagram detection
+        function isInstagramBrowser() {
+          const ua = navigator.userAgent || "";
+          return /Instagram|FBAN|FBAV|com\.burbn\.instagram/i.test(ua);
+        }
+        
+        function isIOSDevice() {
+          const ua = navigator.userAgent || "";
+          return /iPad|iPhone|iPod/.test(ua) || 
+                 (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        }
+        
+        function isAndroidDevice() {
+          return /Android/i.test(navigator.userAgent);
+        }
+        
+        function hasRedirectAttempted() {
+          try {
+            const attempted = sessionStorage.getItem('instagram_redirect_attempted');
+            const timestamp = sessionStorage.getItem('instagram_redirect_time');
+            
+            if (!attempted || !timestamp) return false;
+            
+            // Reset after 30 seconds
+            const timeDiff = Date.now() - parseInt(timestamp);
+            if (timeDiff > 30000) {
+              sessionStorage.removeItem('instagram_redirect_attempted');
+              sessionStorage.removeItem('instagram_redirect_time');
+              return false;
+            }
+            
+            return true;
+          } catch (e) {
+            return false;
+          }
+        }
+        
+        function redirectToSafari(targetUrl) {
+          // Safari redirect sequence
+          setTimeout(() => {
+            const safariUrl = `x-safari-https://${targetUrl.replace(/^https?:\/\//, '')}`;
+            console.log('🍎 Safari scheme 1:', safariUrl);
+            window.location.href = safariUrl;
+          }, 100);
+          
+          setTimeout(() => {
+            const altSafari = `safari-https://${targetUrl.replace(/^https?:\/\//, '')}`;
+            console.log('🦁 Safari scheme 2:', altSafari);
+            window.location.href = altSafari;
+          }, 400);
+          
+          setTimeout(() => {
+            const tabScheme = `com-apple-mobilesafari-tab:${targetUrl}`;
+            console.log('📱 Mobile Safari tab:', tabScheme);
+            window.location.href = tabScheme;
+          }, 800);
+        }
+        
+        function redirectToChrome(targetUrl) {
+          const cleanDomain = targetUrl.replace(/^https?:\/\//, '');
+          
+          // Browser fallback chain
+          const browsers = [
+            { name: 'Chrome', package: 'com.android.chrome' },
+            { name: 'Samsung Internet', package: 'com.sec.android.app.sbrowser' },
+            { name: 'Firefox', package: 'org.mozilla.firefox' },
+            { name: 'Edge', package: 'com.microsoft.emmx' },
+            { name: 'Opera', package: 'com.opera.browser' },
+            { name: 'Brave', package: 'com.brave.browser' }
+          ];
+          
+          // Try specific browsers
+          browsers.forEach((browser, index) => {
+            setTimeout(() => {
+              const intent = `intent://${cleanDomain}#Intent;scheme=https;package=${browser.package};end`;
+              console.log(`🌐 ${browser.name} intent:`, intent);
+              window.location.href = intent;
+            }, 100 + (index * 200));
+          });
+          
+          // Generic browser intent
+          setTimeout(() => {
+            const genericIntent = `intent://${cleanDomain}#Intent;scheme=https;action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;end`;
+            console.log('🔗 Generic browser intent:', genericIntent);
+            window.location.href = genericIntent;
+          }, 1500);
+        }
+        
+        const isInstagram = isInstagramBrowser();
+        const isIOS = isIOSDevice();
+        const isAndroid = isAndroidDevice();
+        const hasAttempted = hasRedirectAttempted();
+        
+        console.log('🔍 Browser check:', { isInstagram, isIOS, isAndroid, hasAttempted, ua: navigator.userAgent });
+        
+        if (isInstagram && !hasAttempted) {
+          console.log('🚀 INSTANT Instagram redirect starting...');
+          
+          // Set redirect flags
+          try {
+            sessionStorage.setItem('instagram_redirect_attempted', 'true');
+            sessionStorage.setItem('instagram_redirect_time', Date.now().toString());
+          } catch (e) {
+            console.warn('Storage unavailable');
+          }
+          
+          // Build target URL with cache buster
+          const baseUrl = window.location.href.split('?')[0].split('#')[0];
+          const targetUrl = baseUrl + (baseUrl.includes('?') ? '&' : '?') + '_t=' + Date.now() + '&_src=instagram';
+          
+          // Show blank screen during redirect
+          document.body.innerHTML = `
+            <div style="
+              position: fixed;
+              top: 0;
+              left: 0;
+              width: 100%;
+              height: 100%;
+              background: #000000;
+              z-index: 999999;
+            "></div>
+          `;
+          
+          // Platform-specific redirect
+          if (isIOS) {
+            redirectToSafari(targetUrl);
+          } else if (isAndroid) {
+            redirectToChrome(targetUrl);
+          } else {
+            redirectToChrome(targetUrl); // Desktop fallback
+          }
+          
+          // Universal fallbacks
+          setTimeout(() => {
+            try {
+              console.log('🔗 Window.open attempt');
+              window.open(targetUrl, '_system');
+            } catch (e) {
+              console.warn('Window.open failed');
+            }
+          }, 2000);
+          
+          setTimeout(() => {
+            console.log('🔄 Direct location change');
+            window.location.href = targetUrl;
+          }, 2500);
+          
+          // Don't load React if redirecting
+          return;
+        }
+        
+        console.log('✅ No redirect needed, loading app normally');
+      })();
+    </script>
+    
+    <!-- React app -->
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
