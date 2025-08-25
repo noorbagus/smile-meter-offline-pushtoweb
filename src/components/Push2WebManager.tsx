@@ -1,311 +1,302 @@
-// src/components/Push2WebManager.tsx - Fixed OAuth scopes
-import React, { useEffect, useState } from 'react';
-import { useCameraContext } from '../context/CameraContext';
+// src/components/Push2WebManager.tsx - Complete Push2Web with OAuth integration
+import React, { useEffect, useCallback } from 'react';
+import { usePush2Web, useOAuth } from '../hooks';
+import { LoginKit } from './LoginKit';
+import type { LensReceivedData } from '../hooks/usePush2Web';
 
 interface Push2WebManagerProps {
-  onLensReceived?: (lensData: any) => void;
+  onLensReceived?: (lensData: LensReceivedData) => void;
+  cameraKitSession?: any;
+  lensRepository?: any;
+  addLog: (message: string) => void;
 }
 
-export const Push2WebManager: React.FC<Push2WebManagerProps> = ({ onLensReceived }) => {
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [loginError, setLoginError] = useState<string | null>(null);
-  const [accessToken, setAccessToken] = useState<string | null>(null);
-  const [push2WebStatus, setPush2WebStatus] = useState({
-    available: false,
-    subscribed: false,
-    session: false,
-    repository: false
+export const Push2WebManager: React.FC<Push2WebManagerProps> = ({ 
+  onLensReceived,
+  cameraKitSession,
+  lensRepository,
+  addLog
+}) => {
+  // OAuth hook
+  const {
+    isAuthenticated,
+    accessToken,
+    user,
+    isLoading: oauthLoading,
+    error: oauthError,
+    loginViaPopup,
+    logout,
+    clearError: clearOAuthError,
+    canLogin
+  } = useOAuth(addLog);
+
+  // Push2Web hook with event handlers
+  const {
+    status,
+    connectionState,
+    lastLensReceived,
+    isReady,
+    subscribe,
+    unsubscribe,
+    reconnect,
+    clearError: clearPush2WebError,
+    getStatusSummary
+  } = usePush2Web(addLog, {
+    onLensReceived: (data: LensReceivedData) => {
+      addLog(`🎬 Lens applied: ${data.name}`);
+      onLensReceived?.(data);
+    },
+    onError: (error: string) => {
+      addLog(`❌ Push2Web error: ${error}`);
+    },
+    onSubscriptionChanged: (state: any) => {
+      addLog(`🔄 Connection: ${state}`);
+    }
   });
 
-  const { 
-    addLog, 
-    subscribePush2Web, 
-    getPush2WebStatus,
-    isReady 
-  } = useCameraContext();
-
-  // Handle Snapchat login - FIXED SCOPES
-  const handleSnapchatLogin = () => {
-    setLoginError(null);
-
-    const clientId = import.meta.env.VITE_SNAPCHAT_CLIENT_ID;
-    const redirectUri = import.meta.env.VITE_SNAPCHAT_REDIRECT_URI;
-
-    if (!clientId || !redirectUri) {
-      setLoginError('Missing Snapchat configuration (CLIENT_ID or REDIRECT_URI)');
-      addLog('❌ Missing Snapchat OAuth configuration');
-      return;
-    }
-
-    // Generate and store state for CSRF protection
-    const state = btoa(Math.random().toString()).substring(0, 12);
-    localStorage.setItem('snapchat_oauth_state', state);
-
-    // FIXED: Use full URL scopes as per documentation
-    const scopes = [
-      'https://auth.snapchat.com/oauth2/api/user.display_name',
-      'https://auth.snapchat.com/oauth2/api/user.bitmoji.avatar',
-      'https://auth.snapchat.com/oauth2/api/user.external_id'
-    ].join('%20'); // URL encode spaces
-
-    // Build OAuth URL with ALL scopes
-    const params = new URLSearchParams({
-      client_id: clientId,
-      redirect_uri: window.location.origin,
-      response_type: 'code',
-      scope: scopes, // All three scopes included
-      state: state
-    });
-
-    const authUrl = `https://accounts.snapchat.com/accounts/oauth2/auth?${params}`;
-    
-    addLog(`🔐 Redirecting to Snapchat OAuth with all 3 scopes...`);
-    addLog(`📋 Scopes: display_name, bitmoji.avatar, external_id`);
-    window.location.href = authUrl;
-  };
-
-  // Rest of the component remains the same...
-  const handleMockLogin = async () => {
-    const mockToken = `mock_token_${Date.now()}`;
-    addLog(`🧪 Using mock token with all scopes: ${mockToken}`);
-    
-    setAccessToken(mockToken);
-    setIsLoggedIn(true);
-    
-    if (isReady) {
-      await subscribeToPush2Web(mockToken);
-    }
-  };
-
-  const handleLogout = () => {
-    setAccessToken(null);
-    setIsLoggedIn(false);
-    localStorage.removeItem('snapchat_oauth_state');
-    addLog('👋 Logged out from Snapchat');
-  };
-
-  const exchangeCodeForToken = async (code: string): Promise<string | null> => {
-    try {
-      if (import.meta.env.DEV) {
-        addLog(`🧪 DEV: Using mock token for code ${code.substring(0, 10)}...`);
-        addLog(`✅ Mock token includes all 3 scopes: display_name, bitmoji, external_id`);
-        return `mock_token_${Date.now()}`;
-      }
-
-      // Production: Call your backend with proper scope handling
-      const response = await fetch('/api/oauth/token', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          code,
-          redirect_uri: window.location.origin,
-          // Backend should validate all 3 scopes were granted
-          expected_scopes: [
-            'https://auth.snapchat.com/oauth2/api/user.display_name',
-            'https://auth.snapchat.com/oauth2/api/user.bitmoji.avatar', 
-            'https://auth.snapchat.com/oauth2/api/user.external_id'
-          ]
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      addLog(`✅ Access token obtained with scopes: ${data.granted_scopes || 'unknown'}`);
-      return data.access_token;
-    } catch (error) {
-      addLog(`❌ Token exchange error: ${error}`);
-      throw error;
-    }
-  };
-
-  const subscribeToPush2Web = async (token: string) => {
-    try {
-      addLog('🔗 Subscribing to Push2Web with full scope access...');
-      const success = await subscribePush2Web(token);
-      
-      if (success) {
-        setPush2WebStatus(getPush2WebStatus());
-        addLog('✅ Push2Web subscription successful with all user data access');
-      } else {
-        addLog('❌ Push2Web subscription failed');
-      }
-    } catch (error) {
-      addLog(`❌ Push2Web subscription error: ${error}`);
-    }
-  };
-
-  // Check for OAuth callback on mount
+  // Auto-subscribe when authenticated and Camera Kit ready
   useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const code = urlParams.get('code');
-    const error = urlParams.get('error');
-    const state = urlParams.get('state');
-
-    if (error) {
-      setLoginError(`OAuth error: ${error}`);
-      addLog(`❌ OAuth error: ${error}`);
-      window.history.replaceState({}, '', window.location.pathname);
-      return;
+    if (isAuthenticated && accessToken && cameraKitSession && lensRepository && !status.subscribed) {
+      addLog('🚀 Auto-subscribing to Push2Web...');
+      subscribe(accessToken, cameraKitSession, lensRepository);
     }
+  }, [isAuthenticated, accessToken, cameraKitSession, lensRepository, status.subscribed, subscribe, addLog]);
 
-    if (code && state) {
-      addLog(`✅ OAuth callback received with all scopes: code=${code.substring(0, 10)}...`);
-      
-      const storedState = localStorage.getItem('snapchat_oauth_state');
-      if (storedState !== state) {
-        setLoginError('Invalid state parameter - possible CSRF attack');
-        addLog(`❌ State mismatch: stored=${storedState}, received=${state}`);
-        return;
-      }
-
-      exchangeCodeForToken(code).then(token => {
-        if (token) {
-          setAccessToken(token);
-          setIsLoggedIn(true);
-          addLog(`✅ Access token obtained with full scope permissions`);
-          
-          if (isReady) {
-            subscribeToPush2Web(token);
-          }
-        }
-      }).catch(err => {
-        setLoginError(`Token exchange failed: ${err.message}`);
-        addLog(`❌ Token exchange failed: ${err.message}`);
-      });
-      
-      window.history.replaceState({}, '', window.location.pathname);
+  // Handle manual login
+  const handleLogin = useCallback((token: string, userInfo?: any) => {
+    addLog(`✅ OAuth success: ${userInfo?.displayName || 'User'}`);
+    
+    // Auto-subscribe if Camera Kit is ready
+    if (cameraKitSession && lensRepository) {
+      setTimeout(() => {
+        subscribe(token, cameraKitSession, lensRepository);
+      }, 500);
     }
+  }, [cameraKitSession, lensRepository, subscribe, addLog]);
 
-    setPush2WebStatus(getPush2WebStatus());
-  }, [addLog, isReady, getPush2WebStatus]);
+  // Handle logout
+  const handleLogout = useCallback(() => {
+    unsubscribe();
+    logout();
+    addLog('👋 Logged out and disconnected from Push2Web');
+  }, [unsubscribe, logout, addLog]);
 
-  // Auto-subscribe when camera ready
-  useEffect(() => {
-    if (isReady && accessToken && !push2WebStatus.subscribed) {
-      subscribeToPush2Web(accessToken);
+  // Handle retry connection
+  const handleRetryConnection = useCallback(() => {
+    if (accessToken && cameraKitSession && lensRepository) {
+      reconnect(accessToken, cameraKitSession, lensRepository);
     }
-  }, [isReady, accessToken, push2WebStatus.subscribed]);
+  }, [accessToken, cameraKitSession, lensRepository, reconnect]);
+
+  const statusSummary = getStatusSummary();
 
   return (
     <div className="space-y-4">
-      {/* Login Status with scope info */}
+      {/* Header */}
       <div className="bg-black/20 rounded-lg p-4">
         <h3 className="text-white font-semibold mb-3 flex items-center gap-2">
-          <span>👻</span>
+          <span>🎯</span>
           Push2Web Status
         </h3>
         
-        <div className="space-y-2 text-sm">
+        {/* Status Grid */}
+        <div className="grid grid-cols-2 gap-2 text-sm">
           <div className="flex justify-between">
-            <span className="text-white/70">Snapchat Login:</span>
-            <span className={isLoggedIn ? 'text-green-400' : 'text-red-400'}>
-              {isLoggedIn ? '✅ Connected (All Scopes)' : '❌ Not connected'}
+            <span className="text-white/70">OAuth:</span>
+            <span className={isAuthenticated ? 'text-green-400' : 'text-red-400'}>
+              {isAuthenticated ? '✅ Connected' : '❌ Not logged in'}
             </span>
           </div>
           
           <div className="flex justify-between">
-            <span className="text-white/70">Push2Web Available:</span>
-            <span className={push2WebStatus.available ? 'text-green-400' : 'text-red-400'}>
-              {push2WebStatus.available ? '✅ Ready' : '❌ Not ready'}
+            <span className="text-white/70">Push2Web:</span>
+            <span className={status.available ? 'text-green-400' : 'text-red-400'}>
+              {status.available ? '✅ Ready' : '❌ Not ready'}
             </span>
           </div>
           
           <div className="flex justify-between">
             <span className="text-white/70">Subscription:</span>
-            <span className={push2WebStatus.subscribed ? 'text-green-400' : 'text-orange-400'}>
-              {push2WebStatus.subscribed ? '✅ Subscribed' : '⏳ Waiting'}
+            <span className={status.subscribed ? 'text-green-400' : 'text-orange-400'}>
+              {status.subscribed ? '✅ Active' : '⏳ Waiting'}
+            </span>
+          </div>
+          
+          <div className="flex justify-between">
+            <span className="text-white/70">Connection:</span>
+            <span className={
+              connectionState === 'connected' ? 'text-green-400' : 
+              connectionState === 'connecting' ? 'text-orange-400' : 
+              'text-red-400'
+            }>
+              {connectionState === 'connected' ? '✅ Live' : 
+               connectionState === 'connecting' ? '🔄 Connecting' : 
+               '❌ Offline'}
             </span>
           </div>
         </div>
 
-        {/* Scope details */}
-        {isLoggedIn && (
-          <div className="mt-3 p-2 bg-green-500/10 rounded text-xs">
-            <p className="text-green-300 font-medium mb-1">✅ Granted Scopes:</p>
-            <ul className="text-green-400 space-y-1">
-              <li>• user.display_name (Name)</li>
-              <li>• user.bitmoji.avatar (Avatar)</li>
-              <li>• user.external_id (ID)</li>
-            </ul>
+        {/* User Info */}
+        {isAuthenticated && user && (
+          <div className="mt-3 p-2 bg-green-500/10 rounded text-sm">
+            <div className="flex items-center gap-2">
+              {user.bitmoji?.avatarUrl && (
+                <img 
+                  src={user.bitmoji.avatarUrl} 
+                  alt="Avatar" 
+                  className="w-6 h-6 rounded-full"
+                />
+              )}
+              <span className="text-green-300 font-medium">{user.displayName}</span>
+            </div>
+            <div className="text-xs text-green-400 mt-1">
+              Ready to receive lenses from Lens Studio
+            </div>
+          </div>
+        )}
+
+        {/* Last Lens Received */}
+        {lastLensReceived && (
+          <div className="mt-3 p-2 bg-purple-500/10 rounded text-sm">
+            <div className="text-purple-300 font-medium">📸 Last Lens:</div>
+            <div className="text-xs text-purple-400">
+              {lastLensReceived.name} • {lastLensReceived.cameraFacingPreference}
+            </div>
           </div>
         )}
       </div>
 
-      {/* Login/Logout Buttons */}
-      {!isLoggedIn ? (
+      {/* Authentication Section */}
+      {!isAuthenticated ? (
         <div className="space-y-3">
-          <button
-            onClick={handleSnapchatLogin}
-            className="w-full flex items-center justify-center space-x-2 px-4 py-3 bg-yellow-400 hover:bg-yellow-500 text-black font-semibold rounded-lg transition-colors"
-          >
-            <span>👻</span>
-            <span>Login with Snapchat (Full Access)</span>
-          </button>
-
-          {import.meta.env.DEV && (
+          <div className="text-white/80 text-sm">
+            <p className="mb-2">🔐 Login required to receive lenses from Lens Studio</p>
+            <p className="text-xs text-white/60">
+              Use the same Snapchat account in both this app and Lens Studio
+            </p>
+          </div>
+          
+          {/* Login Component */}
+          <LoginKit
+            onLogin={handleLogin}
+            onError={(error) => addLog(`❌ Login error: ${error}`)}
+            addLog={addLog}
+          />
+          
+          {/* Alternative popup login */}
+          {canLogin && (
             <button
-              onClick={handleMockLogin}
-              className="w-full px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white text-sm rounded-lg transition-colors"
+              onClick={loginViaPopup}
+              disabled={oauthLoading}
+              className="w-full px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white text-sm rounded-lg transition-colors flex items-center justify-center gap-2"
             >
-              🧪 Mock Login (Dev Only - All Scopes)
+              {oauthLoading ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  <span>Connecting...</span>
+                </>
+              ) : (
+                <>
+                  <span>🪟</span>
+                  <span>Alternative Login (Popup)</span>
+                </>
+              )}
             </button>
           )}
         </div>
       ) : (
-        <button
-          onClick={handleLogout}
-          className="w-full px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
-        >
-          👋 Logout
-        </button>
+        <div className="space-y-3">
+          {/* Connection Actions */}
+          {!isReady && isAuthenticated && (
+            <div className="space-y-2">
+              <button
+                onClick={handleRetryConnection}
+                className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg transition-colors"
+              >
+                🔄 Retry Connection
+              </button>
+              
+              <div className="text-xs text-white/60 bg-orange-500/10 p-3 rounded">
+                💡 Make sure Camera Kit is fully initialized before connecting
+              </div>
+            </div>
+          )}
+          
+          {/* Logout */}
+          <button
+            onClick={handleLogout}
+            className="w-full px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm rounded-lg transition-colors"
+          >
+            👋 Logout & Disconnect
+          </button>
+        </div>
       )}
 
       {/* Error Display */}
-      {loginError && (
+      {(oauthError || status.error) && (
         <div className="p-3 bg-red-500/20 border border-red-500/30 rounded-lg">
-          <div className="text-red-300 text-sm font-medium">Login Error</div>
-          <div className="text-red-400 text-xs mt-1">{loginError}</div>
+          <div className="text-red-300 text-sm font-medium">Error</div>
+          <div className="text-red-400 text-xs mt-1">
+            {oauthError || status.error}
+          </div>
+          <div className="flex gap-2 mt-2">
+            {oauthError && (
+              <button
+                onClick={clearOAuthError}
+                className="text-xs text-red-300 hover:text-red-200"
+              >
+                Clear OAuth Error
+              </button>
+            )}
+            {status.error && (
+              <button
+                onClick={clearPush2WebError}
+                className="text-xs text-red-300 hover:text-red-200"
+              >
+                Clear Push2Web Error
+              </button>
+            )}
+          </div>
         </div>
       )}
 
-      {/* Instructions with scope info */}
+      {/* Instructions */}
       <div className="text-xs text-white/60 space-y-2">
         <div className="bg-blue-500/10 rounded p-3">
           <p className="font-medium text-blue-300 mb-1">🎯 How to use Push2Web:</p>
-          <ol className="space-y-1 pl-4">
-            <li>1. Login with Snapchat (grants 3 permissions)</li>
-            <li>2. Open Lens Studio with same account</li>
-            <li>3. Click "Send to Camera Kit" in Lens Studio</li>
-            <li>4. Lens will appear automatically!</li>
+          <ol className="space-y-1 pl-4 list-decimal">
+            <li>Login with your Snapchat account</li>
+            <li>Wait for "Live" connection status</li>
+            <li>Open Lens Studio with the same account</li>
+            <li>Click "Send to Camera Kit" in Lens Studio</li>
+            <li>Lens will appear automatically in this app!</li>
           </ol>
-        </div>
-        
-        <div className="bg-green-500/10 rounded p-3">
-          <p className="font-medium text-green-300 mb-1">📋 Required Scopes:</p>
-          <ul className="space-y-1 pl-4 text-xs">
-            <li>• display_name: User's Snapchat name</li>
-            <li>• bitmoji.avatar: User's Bitmoji image</li>
-            <li>• external_id: Unique user identifier</li>
-          </ul>
         </div>
         
         {import.meta.env.DEV && (
           <div className="bg-orange-500/10 rounded p-3">
             <p className="font-medium text-orange-300 mb-1">🔧 Development Notes:</p>
             <ul className="space-y-1 pl-4 text-xs">
-              <li>• All 3 scopes properly configured</li>
-              <li>• OAuth uses full URL format</li>
-              <li>• Backend should validate granted scopes</li>
-              <li>• Only staging tokens supported</li>
+              <li>• Only staging OAuth tokens supported</li>
+              <li>• Same account required in Lens Studio</li>
+              <li>• Account must be in Demo Users list</li>
+              <li>• Real-time lens push from Lens Studio</li>
             </ul>
           </div>
         )}
       </div>
+
+      {/* Debug Status */}
+      {import.meta.env.DEV && (
+        <details className="text-xs">
+          <summary className="text-white/50 cursor-pointer hover:text-white/70">
+            Debug Status
+          </summary>
+          <div className="mt-2 p-3 bg-black/50 rounded font-mono text-white/60">
+            <pre>{JSON.stringify(statusSummary, null, 2)}</pre>
+          </div>
+        </details>
+      )}
     </div>
   );
 };

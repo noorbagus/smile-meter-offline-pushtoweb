@@ -9,6 +9,11 @@
       "destination": "/index.html"
     }
   ],
+  "functions": {
+    "api/**/*.js": {
+      "runtime": "nodejs18.x"
+    }
+  },
   "headers": [
     {
       "source": "/(.*)",
@@ -23,5 +28,10 @@
         }
       ]
     }
-  ]
+  ],
+  "env": {
+    "VITE_SNAPCHAT_CLIENT_ID": "@snapchat_client_id",
+    "VITE_SNAPCHAT_CLIENT_SECRET": "@snapchat_client_secret",
+    "VITE_SNAPCHAT_REDIRECT_URI": "@snapchat_redirect_uri"
+  }
 }
