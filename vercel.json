@@ -11,7 +11,7 @@
   ],
   "functions": {
     "api/**/*.js": {
-      "runtime": "@vercel/node@2.15.10"
+      "runtime": "@vercel/node@18.15.0"
     }
   },
   "headers": [
@@ -28,10 +28,5 @@
         }
       ]
     }
-  ],
-  "env": {
-    "VITE_SNAPCHAT_CLIENT_ID": "$VITE_SNAPCHAT_CLIENT_ID",
-    "VITE_SNAPCHAT_CLIENT_SECRET": "$VITE_SNAPCHAT_CLIENT_SECRET", 
-    "VITE_SNAPCHAT_REDIRECT_URI": "$VITE_SNAPCHAT_REDIRECT_URI"
-  }
+  ]
 }
