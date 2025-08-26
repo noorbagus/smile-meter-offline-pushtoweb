@@ -1,89 +1,108 @@
-// api/auth/login.js - Redirect ke Snapchat OAuth
+// api/auth/login.js - Snapchat OAuth callback handler
 export default async function handler(req, res) {
-  const clientId = process.env.VITE_SNAPCHAT_CLIENT_ID;
-  const redirectUri = process.env.VITE_SNAPCHAT_REDIRECT_URI || 
-    `${req.headers['x-forwarded-proto'] || 'https'}://${req.headers.host}/api/auth/callback`;
+  console.log('OAuth callback received:', req.query);
   
-  // Generate state untuk security
-  const state = Buffer.from(Math.random().toString()).toString('base64').substring(0, 12);
-  
-  // Store state in cookie
-  res.setHeader('Set-Cookie', `oauth_state=${state}; HttpOnly; SameSite=Lax; Path=/`);
-  
-  const authUrl = new URL('https://accounts.snapchat.com/accounts/oauth2/auth');
-  authUrl.searchParams.set('client_id', clientId);
-  authUrl.searchParams.set('redirect_uri', redirectUri);
-  authUrl.searchParams.set('response_type', 'code');
-  authUrl.searchParams.set('scope', 'user.display_name user.bitmoji.avatar https://auth.snapchat.com/oauth2/api/camkit_lens_push_to_device');
-  authUrl.searchParams.set('state', state);
-  
-  res.redirect(authUrl.toString());
-}
-
-// api/auth/callback.js - Handle OAuth callback
-export default async function handler(req, res) {
   const { code, state, error } = req.query;
-  const cookies = req.headers.cookie || '';
-  const storedState = cookies.match(/oauth_state=([^;]*)/)?.[1];
   
+  // Handle OAuth error
   if (error) {
-    return res.redirect(`/?error=${encodeURIComponent(error)}`);
+    console.error('OAuth error:', error);
+    return res.redirect(`/?error=${error}`);
   }
   
-  if (!code || !state || state !== storedState) {
-    return res.redirect('/?error=invalid_request');
+  // Handle missing code
+  if (!code) {
+    console.error('No authorization code received');
+    return res.redirect('/?error=no_code');
   }
   
   try {
-    // Exchange code for token
-    const tokenResponse = await fetch('https://accounts.snapchat.com/accounts/oauth2/token', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Authorization': `Basic ${Buffer.from(
-          `${process.env.VITE_SNAPCHAT_CLIENT_ID}:${process.env.VITE_SNAPCHAT_CLIENT_SECRET}`
-        ).toString('base64')}`
-      },
-      body: new URLSearchParams({
-        grant_type: 'authorization_code',
-        code: code,
-        redirect_uri: process.env.VITE_SNAPCHAT_REDIRECT_URI ||
-          `${req.headers['x-forwarded-proto'] || 'https'}://${req.headers.host}/api/auth/callback`,
-        client_id: process.env.VITE_SNAPCHAT_CLIENT_ID
-      })
-    });
-    
-    const tokenData = await tokenResponse.json();
+    // Exchange authorization code for access token
+    const tokenData = await exchangeCodeForToken(code);
     
     if (!tokenData.access_token) {
       throw new Error('No access token received');
     }
     
-    // Fetch user profile
-    const profileResponse = await fetch('https://kit-api.snapchat.com/v1/me', {
+    // Fetch user info
+    const userInfo = await fetchUserInfo(tokenData.access_token);
+    
+    console.log('OAuth success:', { 
+      token: tokenData.access_token.substring(0, 20) + '...', 
+      user: userInfo?.displayName 
+    });
+    
+    // Encode data for URL
+    const tokenParam = encodeURIComponent(tokenData.access_token);
+    const userParam = encodeURIComponent(JSON.stringify(userInfo));
+    
+    // Redirect to main app with token
+    const redirectUrl = `/?oauth_success=true&access_token=${tokenParam}&user_info=${userParam}`;
+    
+    return res.redirect(redirectUrl);
+    
+  } catch (error) {
+    console.error('Token exchange failed:', error);
+    return res.redirect(`/?error=token_exchange_failed&details=${encodeURIComponent(error.message)}`);
+  }
+}
+
+async function exchangeCodeForToken(code) {
+  const clientId = process.env.VITE_SNAPCHAT_CLIENT_ID;
+  const clientSecret = process.env.VITE_SNAPCHAT_CLIENT_SECRET;
+  const redirectUri = process.env.VERCEL_URL ? 
+    `https://${process.env.VERCEL_URL}/api/auth/login` : 
+    `https://smile-meter-offline-pushtoweb.vercel.app/api/auth/login`;
+  
+  console.log('Token exchange params:', { clientId: !!clientId, clientSecret: !!clientSecret, redirectUri });
+  
+  if (!clientId || !clientSecret) {
+    throw new Error('Missing OAuth credentials');
+  }
+  
+  const tokenUrl = 'https://accounts.snapchat.com/accounts/oauth2/token';
+  
+  const response = await fetch(tokenUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Authorization': `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString('base64')}`
+    },
+    body: new URLSearchParams({
+      grant_type: 'authorization_code',
+      code: code,
+      redirect_uri: redirectUri,
+      client_id: clientId
+    })
+  });
+  
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('Token exchange error:', response.status, errorText);
+    throw new Error(`Token exchange failed: ${response.status} ${errorText}`);
+  }
+  
+  return await response.json();
+}
+
+async function fetchUserInfo(accessToken) {
+  try {
+    const response = await fetch('https://kit-api.snapchat.com/v1/me', {
       headers: {
-        'Authorization': `Bearer ${tokenData.access_token}`
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json'
       }
     });
     
-    let userInfo = null;
-    if (profileResponse.ok) {
-      const profileData = await profileResponse.json();
-      userInfo = profileData.data?.me;
+    if (!response.ok) {
+      console.warn('User info fetch failed:', response.status);
+      return null;
     }
     
-    // Redirect back with token and user info
-    const redirectUrl = new URL('/', `${req.headers['x-forwarded-proto'] || 'https'}://${req.headers.host}`);
-    redirectUrl.searchParams.set('oauth_success', '1');
-    redirectUrl.searchParams.set('access_token', tokenData.access_token);
-    if (userInfo) {
-      redirectUrl.searchParams.set('user_info', encodeURIComponent(JSON.stringify(userInfo)));
-    }
-    
-    res.redirect(redirectUrl.toString());
-    
+    const data = await response.json();
+    return data.data?.me || null;
   } catch (error) {
-    console.error('OAuth error:', error);
-    res.redirect(`/?error=auth_failed`);
+    console.warn('User info fetch error:', error);
+    return null;
   }
 }

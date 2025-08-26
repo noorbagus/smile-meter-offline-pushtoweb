@@ -1,4 +1,4 @@
-// src/hooks/useOAuth.ts - Updated untuk server-side flow
+// src/hooks/useOAuth.ts - Handle callback dari serverless function
 import { useState, useEffect, useCallback } from 'react';
 
 export interface OAuthUser {
@@ -27,7 +27,7 @@ export const useOAuth = (addLog: (message: string) => void) => {
     error: null
   });
 
-  // Handle OAuth success from URL parameters
+  // Handle OAuth callback dari URL parameters
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const oauthSuccess = urlParams.get('oauth_success');
@@ -59,10 +59,10 @@ export const useOAuth = (addLog: (message: string) => void) => {
           isLoading: false
         }));
 
-        // Store in sessionStorage for persistence
-        sessionStorage.setItem('oauth_token', accessToken);
+        // Store in localStorage
+        localStorage.setItem('snapchat_token', accessToken);
         if (userInfo) {
-          sessionStorage.setItem('oauth_user', JSON.stringify(userInfo));
+          localStorage.setItem('snapchat_user', JSON.stringify(userInfo));
         }
 
         // Clean URL
@@ -75,12 +75,12 @@ export const useOAuth = (addLog: (message: string) => void) => {
     }
   }, [addLog]);
 
-  // Restore session on page load
+  // Restore from localStorage
   useEffect(() => {
-    const storedToken = sessionStorage.getItem('oauth_token');
-    const storedUser = sessionStorage.getItem('oauth_user');
+    const storedToken = localStorage.getItem('snapchat_token');
+    const storedUser = localStorage.getItem('snapchat_user');
     
-    if (storedToken) {
+    if (storedToken && !state.isLoggedIn) {
       try {
         const user = storedUser ? JSON.parse(storedUser) : null;
         setState(prev => ({
@@ -93,18 +93,32 @@ export const useOAuth = (addLog: (message: string) => void) => {
         addLog(`🔄 Restored OAuth session: ${user?.displayName || 'User'}`);
       } catch (error) {
         addLog(`❌ Failed to restore session: ${error}`);
-        sessionStorage.removeItem('oauth_token');
-        sessionStorage.removeItem('oauth_user');
+        localStorage.removeItem('snapchat_token');
+        localStorage.removeItem('snapchat_user');
       }
     }
-  }, [addLog]);
+  }, [addLog, state.isLoggedIn]);
 
   const login = useCallback(() => {
     addLog('🔐 Redirecting to Snapchat OAuth...');
     setState(prev => ({ ...prev, isLoading: true, error: null }));
     
-    // Redirect ke server-side OAuth endpoint
-    window.location.href = '/api/auth/login';
+    const clientId = import.meta.env.VITE_SNAPCHAT_CLIENT_ID;
+    const redirectUri = `${window.location.origin}/api/auth/login`;
+    
+    const authUrl = new URL('https://accounts.snapchat.com/accounts/oauth2/auth');
+    authUrl.searchParams.set('client_id', clientId);
+    authUrl.searchParams.set('redirect_uri', redirectUri);
+    authUrl.searchParams.set('response_type', 'code');
+    authUrl.searchParams.set('scope', [
+      'user.display_name',
+      'user.bitmoji.avatar',
+      'user.external_id',
+      'https://auth.snapchat.com/oauth2/api/camkit_lens_push_to_device'
+    ].join(' '));
+    authUrl.searchParams.set('state', btoa(Math.random().toString()).substring(0, 12));
+    
+    window.location.href = authUrl.toString();
   }, [addLog]);
 
   const logout = useCallback(() => {
@@ -118,8 +132,8 @@ export const useOAuth = (addLog: (message: string) => void) => {
       error: null
     });
     
-    sessionStorage.removeItem('oauth_token');
-    sessionStorage.removeItem('oauth_user');
+    localStorage.removeItem('snapchat_token');
+    localStorage.removeItem('snapchat_user');
   }, [addLog]);
 
   const clearError = useCallback(() => {
