@@ -1,4 +1,4 @@
-// src/components/LoginKit.tsx - Fixed premature callback execution
+// src/components/LoginKit.tsx - Clean refactored version
 import React, { useEffect, useState, useRef } from 'react';
 
 interface LoginKitProps {
@@ -24,13 +24,12 @@ export const LoginKit: React.FC<LoginKitProps> = ({ onLogin, onError, addLog }) 
   const [error, setError] = useState<string | null>(null);
   const [sdkReady, setSdkReady] = useState(false);
   const [buttonMounted, setButtonMounted] = useState(false);
-  const mountAttempted = useRef(false);
-  const userInitiated = useRef(false); // Track if user actually clicked
+  const mounted = useRef(false);
 
   const clientId = import.meta.env.VITE_SNAPCHAT_CLIENT_ID;
   const redirectURI = import.meta.env.VITE_SNAPCHAT_REDIRECT_URI;
 
-  // Load SDK
+  // Load Snapchat SDK
   useEffect(() => {
     if (window.snap?.loginkit) {
       setSdkReady(true);
@@ -38,67 +37,41 @@ export const LoginKit: React.FC<LoginKitProps> = ({ onLogin, onError, addLog }) 
     }
 
     window.snapKitInit = () => {
-      addLog?.('📱 SDK loaded');
+      addLog?.('📱 Snapchat SDK loaded');
       setSdkReady(true);
     };
 
     const script = document.createElement('script');
     script.src = 'https://sdk.snapkit.com/js/v1/login.js';
     script.onload = () => addLog?.('📱 SDK script loaded');
-    script.onerror = () => {
-      setTimeout(() => setError('SDK load failed'), 100);
-    };
+    script.onerror = () => setError('Failed to load Snapchat SDK');
     document.head.appendChild(script);
 
-    return () => document.getElementById('loginkit-sdk')?.remove();
+    return () => script.remove();
   }, [addLog]);
 
-  // Mount button when SDK ready
+  // Mount login button when SDK ready
   useEffect(() => {
-    if (sdkReady && !mountAttempted.current) {
-      mountAttempted.current = true;
-      
-      // Delay mounting to ensure DOM is ready
-      setTimeout(() => {
-        mountButton();
-      }, 100);
+    if (sdkReady && !mounted.current) {
+      mounted.current = true;
+      mountLoginButton();
     }
   }, [sdkReady]);
 
-  // Listen for OAuth messages
-  useEffect(() => {
-    const handleMessage = (event: MessageEvent) => {
-      if (event.origin !== window.location.origin) return;
-
-      if (event.data.type === 'SNAPCHAT_OAUTH_SUCCESS') {
-        addLog?.('📡 OAuth success via postMessage');
-        userInitiated.current = true; // Mark as user-initiated
-        onLogin(event.data.access_token, event.data.user_info);
-        setIsLoading(false);
-        setError(null);
-      } else if (event.data.type === 'SNAPCHAT_OAUTH_ERROR') {
-        addLog?.(`❌ OAuth error: ${event.data.error}`);
-        setError(`OAuth error: ${event.data.error}`);
-        setIsLoading(false);
-      }
-    };
-
-    window.addEventListener('message', handleMessage);
-    return () => window.removeEventListener('message', handleMessage);
-  }, [onLogin, addLog]);
-
-  const mountButton = () => {
+  const mountLoginButton = () => {
     if (!window.snap?.loginkit) {
-      setTimeout(() => setError('SDK not available'), 100);
+      setError('SDK not available');
       return;
     }
 
     if (!clientId || !redirectURI) {
-      setTimeout(() => setError('Missing config'), 100);
+      setError('Missing OAuth configuration');
       return;
     }
 
     try {
+      addLog?.('🔧 Mounting login button...');
+
       window.snap.loginkit.mountButton('snap-login-button', {
         clientId,
         redirectURI,
@@ -106,117 +79,155 @@ export const LoginKit: React.FC<LoginKitProps> = ({ onLogin, onError, addLog }) 
           'user.display_name',
           'user.external_id',
           'user.bitmoji.avatar',
-          'camkit_lens_push_to_device' // Push2Web scope
+          'camkit_lens_push_to_device' // Required for Push2Web
         ],
-        handleResponseCallback: async () => {
-          // CRITICAL FIX: Only process if user actually initiated login
-          if (!userInitiated.current) {
-            addLog?.('⚠️ Callback triggered without user action - ignoring');
-            return;
-          }
-          
-          addLog?.('🔐 Processing user login...');
-          setIsLoading(true);
-          setError(null);
-          
-          try {
-            // Longer delay for API readiness
-            await new Promise(resolve => setTimeout(resolve, 2000));
-            
-            const result = await window.snap!.loginkit.fetchUserInfo();
-            const userInfo = result?.data?.me;
-            
-            if (!userInfo) {
-              throw new Error('No user info received');
-            }
-            
-            addLog?.(`✅ Login success: ${userInfo.displayName}`);
-            addLog?.(`🎯 Push2Web enabled for: ${userInfo.externalId}`);
-            
-            const mockToken = `snap_push2web_${userInfo.externalId}_${Date.now()}`;
-            onLogin(mockToken, userInfo);
-            
-          } catch (err: any) {
-            const errorMsg = err?.message || err?.toString() || 'Authentication failed';
-            addLog?.(`❌ Login error: ${errorMsg}`);
-            
-            setTimeout(() => {
-              setError('Login failed - please try again');
-            }, 500);
-          } finally {
-            setIsLoading(false);
-            userInitiated.current = false; // Reset flag
-          }
-        }
+        handleResponseCallback: handleLoginCallback
       });
-      
-      // Add click listener to detect user interaction
-      const buttonContainer = document.getElementById('snap-login-button');
-      if (buttonContainer) {
-        buttonContainer.addEventListener('click', () => {
-          addLog?.('👆 User clicked login button');
-          userInitiated.current = true;
-          setIsLoading(true);
-        });
-      }
-      
+
       setButtonMounted(true);
-      addLog?.('🎯 Push2Web login button mounted');
-      
+      addLog?.('✅ Login button ready');
+
     } catch (err: any) {
-      addLog?.(`❌ Mount error: ${err?.message || err}`);
-      setTimeout(() => setError('Button mount failed'), 100);
+      const message = err?.message || 'Button mount failed';
+      addLog?.(`❌ Mount error: ${message}`);
+      setError(message);
     }
   };
 
-  // Show loading state while SDK loads
-  const showLoading = !sdkReady || (sdkReady && !buttonMounted && !error);
+  const handleLoginCallback = async () => {
+    addLog?.('🔐 Processing login...');
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      // Wait for login process to complete
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      
+      const result = await window.snap!.loginkit.fetchUserInfo();
+      const userInfo = result?.data?.me;
+
+      if (!userInfo) {
+        throw new Error('No user information received');
+      }
+
+      addLog?.(`✅ Login successful: ${userInfo.displayName}`);
+      addLog?.(`🎯 Push2Web enabled for user: ${userInfo.externalId}`);
+
+      // Generate Push2Web-compatible token
+      const token = `push2web_${userInfo.externalId}_${Date.now()}`;
+      onLogin(token, userInfo);
+
+    } catch (err: any) {
+      let errorMessage = 'Login failed';
+      
+      // Better error handling
+      if (err?.message) {
+        errorMessage = err.message;
+      } else if (typeof err === 'object') {
+        errorMessage = JSON.stringify(err);
+      } else if (typeof err === 'string') {
+        errorMessage = err;
+      }
+
+      addLog?.(`❌ Login error: ${errorMessage}`);
+      setError(errorMessage);
+      onError?.(errorMessage);
+
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const clearError = () => setError(null);
 
   return (
     <div className="space-y-4">
+      {/* Login Button Container */}
       <div id="snap-login-button" className="min-h-[44px]">
-        {showLoading && (
-          <div className="p-3 bg-gray-600 rounded-lg text-center">
-            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mx-auto mb-2" />
-            <span className="text-white text-sm">Loading Snapchat Login...</span>
+        {!sdkReady && (
+          <div className="flex items-center justify-center p-4 bg-gray-700 rounded-lg">
+            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+            <span className="text-white text-sm">Loading Snapchat SDK...</span>
           </div>
         )}
-        
-        {buttonMounted && !error && (
-          <div className="text-center text-green-300 text-xs">
-            🎯 Push2Web login ready
+
+        {sdkReady && !buttonMounted && !error && (
+          <div className="flex items-center justify-center p-4 bg-blue-600 rounded-lg">
+            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+            <span className="text-white text-sm">Preparing login...</span>
           </div>
         )}
       </div>
 
+      {/* Loading State */}
       {isLoading && (
-        <div className="p-3 bg-blue-500/20 rounded-lg">
-          <div className="text-blue-300 text-sm flex items-center">
+        <div className="p-4 bg-blue-500/20 rounded-lg border border-blue-500/30">
+          <div className="flex items-center text-blue-300">
             <div className="w-4 h-4 border-2 border-blue-300 border-t-transparent rounded-full animate-spin mr-2" />
-            Processing login...
+            <span className="text-sm">Authenticating with Snapchat...</span>
           </div>
         </div>
       )}
 
+      {/* Error State */}
       {error && (
-        <div className="p-3 bg-red-500/20 rounded-lg">
-          <div className="text-red-300 text-sm">{error}</div>
-          <button 
-            onClick={() => setError(null)}
-            className="mt-2 text-xs text-red-400 hover:text-red-300"
+        <div className="p-4 bg-red-500/20 rounded-lg border border-red-500/30">
+          <div className="text-red-300 text-sm font-medium mb-2">Login Error</div>
+          <div className="text-red-400 text-xs mb-3">{error}</div>
+          <button
+            onClick={clearError}
+            className="text-xs text-red-300 hover:text-red-200 underline"
           >
             Try again
           </button>
         </div>
       )}
 
+      {/* Configuration Status */}
       <div className="text-xs text-white/60 space-y-1">
-        <div>Client ID: {clientId ? '✅' : '❌'}</div>
-        <div>Redirect: {redirectURI ? '✅' : '❌'}</div>
-        <div>SDK: {sdkReady ? '✅' : '⏳'}</div>
-        <div>Button: {buttonMounted ? '✅' : '⏳'}</div>
-        <div>Push2Web: {buttonMounted ? '🎯 Ready' : '⏳'}</div>
+        <div className="flex justify-between">
+          <span>Client ID:</span>
+          <span className={clientId ? 'text-green-400' : 'text-red-400'}>
+            {clientId ? '✅' : '❌'}
+          </span>
+        </div>
+        <div className="flex justify-between">
+          <span>Redirect URI:</span>
+          <span className={redirectURI ? 'text-green-400' : 'text-red-400'}>
+            {redirectURI ? '✅' : '❌'}
+          </span>
+        </div>
+        <div className="flex justify-between">
+          <span>SDK Status:</span>
+          <span className={sdkReady ? 'text-green-400' : 'text-yellow-400'}>
+            {sdkReady ? '✅ Ready' : '⏳ Loading'}
+          </span>
+        </div>
+        <div className="flex justify-between">
+          <span>Button Status:</span>
+          <span className={buttonMounted ? 'text-green-400' : 'text-yellow-400'}>
+            {buttonMounted ? '✅ Mounted' : '⏳ Waiting'}
+          </span>
+        </div>
+        <div className="flex justify-between">
+          <span>Push2Web:</span>
+          <span className={buttonMounted ? 'text-blue-400' : 'text-gray-400'}>
+            {buttonMounted ? '🎯 Enabled' : '⏳ Waiting'}
+          </span>
+        </div>
       </div>
+
+      {/* Instructions */}
+      {buttonMounted && !error && (
+        <div className="p-3 bg-blue-500/10 rounded-lg border border-blue-500/20">
+          <div className="text-blue-300 text-xs font-medium mb-1">
+            🎯 Push2Web Ready
+          </div>
+          <div className="text-blue-400 text-xs leading-relaxed">
+            After login, you can receive lenses directly from Lens Studio using the same Snapchat account.
+          </div>
+        </div>
+      )}
     </div>
   );
 };
