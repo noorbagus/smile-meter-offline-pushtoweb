@@ -30,8 +30,8 @@
     }
   ],
   "env": {
-    "VITE_SNAPCHAT_CLIENT_ID": "@snapchat_client_id",
-    "VITE_SNAPCHAT_CLIENT_SECRET": "@snapchat_client_secret",
-    "VITE_SNAPCHAT_REDIRECT_URI": "@snapchat_redirect_uri"
+    "VITE_SNAPCHAT_CLIENT_ID": "$VITE_SNAPCHAT_CLIENT_ID",
+    "VITE_SNAPCHAT_CLIENT_SECRET": "$VITE_SNAPCHAT_CLIENT_SECRET", 
+    "VITE_SNAPCHAT_REDIRECT_URI": "$VITE_SNAPCHAT_REDIRECT_URI"
   }
 }
