@@ -90,7 +90,8 @@ export const LoginKit: React.FC<LoginKitProps> = ({ onLogin, onError, addLog }) 
           setError(null);
           
           try {
-            await new Promise(resolve => setTimeout(resolve, 500));
+            // Longer delay for Snapchat API
+            await new Promise(resolve => setTimeout(resolve, 1500));
             
             const result = await window.snap!.loginkit.fetchUserInfo();
             const userInfo = result?.data?.me;
@@ -107,9 +108,11 @@ export const LoginKit: React.FC<LoginKitProps> = ({ onLogin, onError, addLog }) 
             onLogin(mockToken, userInfo);
             
           } catch (err: any) {
-            addLog?.(`❌ Login error: ${err?.message || err}`);
+            // Better error handling
+            const errorMessage = err?.message || err?.toString() || JSON.stringify(err) || 'Unknown error';
+            addLog?.(`❌ Login error: ${errorMessage}`);
             setTimeout(() => {
-              setError('Authentication failed');
+              setError('Authentication failed - please try again');
             }, 500);
           } finally {
             setIsLoading(false);
