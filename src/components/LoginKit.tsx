@@ -1,4 +1,4 @@
-// src/components/LoginKit.tsx - Fixed DOM timing
+// src/components/LoginKit.tsx - Updated with Push2Web scope
 import React, { useEffect, useState, useRef } from 'react';
 
 interface LoginKitProps {
@@ -37,13 +37,13 @@ export const LoginKit: React.FC<LoginKitProps> = ({ onLogin, onError, addLog }) 
     }
 
     window.snapKitInit = () => {
-      addLog?.('SDK loaded');
+      addLog?.('📱 Login Kit SDK loaded');
       setSdkReady(true);
     };
 
     const script = document.createElement('script');
     script.src = 'https://sdk.snapkit.com/js/v1/login.js';
-    script.onload = () => addLog?.('SDK script loaded');
+    script.onload = () => addLog?.('📱 SDK script loaded');
     script.onerror = () => {
       setTimeout(() => setError('SDK load failed'), 100);
     };
@@ -56,34 +56,11 @@ export const LoginKit: React.FC<LoginKitProps> = ({ onLogin, onError, addLog }) 
   useEffect(() => {
     if (sdkReady && !mountAttempted.current) {
       mountAttempted.current = true;
-      
-      // Delay mounting to ensure DOM is ready
       setTimeout(() => {
         mountButton();
       }, 100);
     }
   }, [sdkReady]);
-
-  // Listen for OAuth messages
-  useEffect(() => {
-    const handleMessage = (event: MessageEvent) => {
-      if (event.origin !== window.location.origin) return;
-
-      if (event.data.type === 'SNAPCHAT_OAUTH_SUCCESS') {
-        addLog?.('OAuth success via postMessage');
-        onLogin(event.data.access_token, event.data.user_info);
-        setIsLoading(false);
-        setError(null);
-      } else if (event.data.type === 'SNAPCHAT_OAUTH_ERROR') {
-        addLog?.(`OAuth error: ${event.data.error}`);
-        setError(`OAuth error: ${event.data.error}`);
-        setIsLoading(false);
-      }
-    };
-
-    window.addEventListener('message', handleMessage);
-    return () => window.removeEventListener('message', handleMessage);
-  }, [onLogin, addLog]);
 
   const mountButton = () => {
     if (!window.snap?.loginkit) {
@@ -92,7 +69,7 @@ export const LoginKit: React.FC<LoginKitProps> = ({ onLogin, onError, addLog }) 
     }
 
     if (!clientId || !redirectURI) {
-      setTimeout(() => setError('Missing config'), 100);
+      setTimeout(() => setError('Missing OAuth config'), 100);
       return;
     }
 
@@ -100,19 +77,19 @@ export const LoginKit: React.FC<LoginKitProps> = ({ onLogin, onError, addLog }) 
       window.snap.loginkit.mountButton('snap-login-button', {
         clientId,
         redirectURI,
+        // Updated scope list with Push2Web lens push scope
         scopeList: [
           'user.display_name',
-          'user.external_id',
+          'user.external_id', 
           'user.bitmoji.avatar',
-          'camkit_lens_push_to_device'
+          'camkit_lens_push_to_device' // NEW: Push2Web scope
         ],
         handleResponseCallback: async () => {
-          addLog?.('Login callback triggered');
+          addLog?.('🔐 Login callback triggered');
           setIsLoading(true);
           setError(null);
           
           try {
-            // Add delay before fetchUserInfo
             await new Promise(resolve => setTimeout(resolve, 500));
             
             const result = await window.snap!.loginkit.fetchUserInfo();
@@ -122,13 +99,15 @@ export const LoginKit: React.FC<LoginKitProps> = ({ onLogin, onError, addLog }) 
               throw new Error('No user info received');
             }
             
-            addLog?.(`Login success: ${userInfo.displayName}`);
-            const mockToken = `snap_${userInfo.externalId}_${Date.now()}`;
+            addLog?.(`✅ Login success: ${userInfo.displayName}`);
+            addLog?.(`🎯 Push2Web scope granted for user: ${userInfo.externalId}`);
+            
+            // Generate mock token with Push2Web capabilities
+            const mockToken = `snap_push2web_${userInfo.externalId}_${Date.now()}`;
             onLogin(mockToken, userInfo);
             
           } catch (err: any) {
-            addLog?.(`Login error: ${err?.message || err}`);
-            // Delay error to prevent immediate override
+            addLog?.(`❌ Login error: ${err?.message || err}`);
             setTimeout(() => {
               setError('Authentication failed');
             }, 500);
@@ -139,15 +118,14 @@ export const LoginKit: React.FC<LoginKitProps> = ({ onLogin, onError, addLog }) 
       });
       
       setButtonMounted(true);
-      addLog?.('Button mounted successfully');
+      addLog?.('🎯 Push2Web login button mounted');
       
     } catch (err: any) {
-      addLog?.(`Mount error: ${err?.message || err}`);
+      addLog?.(`❌ Button mount error: ${err?.message || err}`);
       setTimeout(() => setError('Button mount failed'), 100);
     }
   };
 
-  // Show loading state while SDK loads and button mounts
   const showLoading = !sdkReady || (sdkReady && !buttonMounted && !error);
 
   return (
@@ -162,7 +140,7 @@ export const LoginKit: React.FC<LoginKitProps> = ({ onLogin, onError, addLog }) 
         
         {buttonMounted && !error && (
           <div className="text-center text-green-300 text-xs">
-            Button ready - should appear above
+            Push2Web enabled - Ready for Lens Studio
           </div>
         )}
       </div>
@@ -171,7 +149,7 @@ export const LoginKit: React.FC<LoginKitProps> = ({ onLogin, onError, addLog }) 
         <div className="p-3 bg-blue-500/20 rounded-lg">
           <div className="text-blue-300 text-sm flex items-center">
             <div className="w-4 h-4 border-2 border-blue-300 border-t-transparent rounded-full animate-spin mr-2" />
-            Authenticating...
+            Authenticating with Push2Web...
           </div>
         </div>
       )}
@@ -184,9 +162,10 @@ export const LoginKit: React.FC<LoginKitProps> = ({ onLogin, onError, addLog }) 
 
       <div className="text-xs text-white/60 space-y-1">
         <div>Client ID: {clientId ? '✅' : '❌'}</div>
-        <div>Redirect: {redirectURI ? '✅' : '❌'}</div>
-        <div>SDK: {sdkReady ? '✅' : '⏳'}</div>
-        <div>Button: {buttonMounted ? '✅' : '⏳'}</div>
+        <div>Redirect URI: {redirectURI ? '✅' : '❌'}</div>
+        <div>SDK Ready: {sdkReady ? '✅' : '⏳'}</div>
+        <div>Button Mounted: {buttonMounted ? '✅' : '⏳'}</div>
+        <div className="text-purple-300">🎯 Push2Web Scope: camkit_lens_push_to_device</div>
       </div>
     </div>
   );

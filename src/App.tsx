@@ -1,4 +1,4 @@
-// src/App.tsx - Login UI enabled untuk Push2Web
+// src/App.tsx - Complete with Push2Web integration
 import React, { useState, useEffect, useCallback } from 'react';
 import { 
   CameraProvider, 
@@ -17,9 +17,8 @@ import {
   RenderingModal
 } from './components';
 import { LoginKit } from './components/LoginKit';
-import { Push2WebManager } from './components/Push2WebManager';
 import { checkAndRedirect, isInstagramBrowser, retryRedirect } from './utils/instagramBrowserDetector';
-import { Maximize, X, LogIn } from 'lucide-react';
+import { Maximize, X } from 'lucide-react';
 
 const CameraApp: React.FC = () => {
   const [isFlipped, setIsFlipped] = useState<boolean>(false);
@@ -33,9 +32,9 @@ const CameraApp: React.FC = () => {
   const [tapCount, setTapCount] = useState<number>(0);
   const [exitButtonTimer, setExitButtonTimer] = useState<NodeJS.Timeout | null>(null);
   
-  // Push2Web login state - NOW VISIBLE
+  // Push2Web login state - RESTORED
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
-  const [showLogin, setShowLogin] = useState<boolean>(false);
+  const [showLogin, setShowLogin] = useState<boolean>(true);
 
   const {
     cameraState,
@@ -77,7 +76,7 @@ const CameraApp: React.FC = () => {
     setShowRenderingModal
   } = useRecordingContext();
 
-  // Fullscreen functions (unchanged)
+  // Fullscreen functions
   const enterFullscreen = useCallback(async () => {
     try {
       await document.documentElement.requestFullscreen();
@@ -176,7 +175,7 @@ const CameraApp: React.FC = () => {
     });
   }, [isFullscreen, addLog]);
 
-  // Prevent all gestures in fullscreen (unchanged)
+  // Prevent gestures in fullscreen
   useEffect(() => {
     if (!isFullscreen) return;
 
@@ -213,7 +212,7 @@ const CameraApp: React.FC = () => {
     };
   }, [isFullscreen]);
 
-  // Monitor fullscreen changes (unchanged)
+  // Monitor fullscreen changes
   useEffect(() => {
     const handleFullscreenChange = () => {
       const isCurrentlyFullscreen = !!document.fullscreenElement;
@@ -239,7 +238,7 @@ const CameraApp: React.FC = () => {
     };
   }, [isFullscreen, addLog]);
 
-  // Cleanup timers (unchanged)
+  // Cleanup timers
   useEffect(() => {
     return () => {
       if (longPressTimer) {
@@ -251,26 +250,61 @@ const CameraApp: React.FC = () => {
     };
   }, [longPressTimer, exitButtonTimer]);
 
-  // Handle Snapchat login - NOW ACTIVE
+  // Handle Snapchat login with Push2Web
   const handleSnapchatLogin = useCallback(async (accessToken: string, userInfo?: any) => {
     try {
-      addLog(`🔗 Snapchat login successful: ${userInfo?.displayName || 'User'}`);
+      addLog('🎯 Snapchat login successful, subscribing to Push2Web...');
       
-      const success = await subscribePush2Web(accessToken);
-      
-      if (success) {
+      // Subscribe to Push2Web only after Camera Kit is ready
+      if (cameraState === 'ready') {
+        const success = await subscribePush2Web(accessToken);
+        
+        if (success) {
+          setIsLoggedIn(true);
+          setShowLogin(false);
+          addLog('✅ Push2Web ready - can receive lenses from Lens Studio');
+          addLog(`🎬 User: ${userInfo?.displayName || 'Unknown'} connected`);
+        } else {
+          addLog('❌ Push2Web subscription failed');
+        }
+      } else {
+        // Store token for later subscription
+        sessionStorage.setItem('pending_push2web_token', accessToken);
+        sessionStorage.setItem('pending_push2web_user', JSON.stringify(userInfo));
+        
         setIsLoggedIn(true);
         setShowLogin(false);
-        addLog('✅ Push2Web ready - can receive lenses from Lens Studio');
-      } else {
-        addLog('❌ Push2Web subscription failed');
+        addLog('🎯 Login successful - Push2Web will connect when camera ready');
       }
     } catch (error) {
       addLog(`❌ Login error: ${error}`);
     }
-  }, [subscribePush2Web, addLog]);
+  }, [subscribePush2Web, addLog, cameraState]);
 
-  // Instagram redirect check (unchanged)
+  // Auto-subscribe Push2Web when camera becomes ready
+  useEffect(() => {
+    if (cameraState === 'ready' && isLoggedIn) {
+      const pendingToken = sessionStorage.getItem('pending_push2web_token');
+      const pendingUser = sessionStorage.getItem('pending_push2web_user');
+      
+      if (pendingToken && !getPush2WebStatus().subscribed) {
+        addLog('🔄 Camera ready - connecting Push2Web...');
+        
+        subscribePush2Web(pendingToken).then(success => {
+          if (success) {
+            const user = pendingUser ? JSON.parse(pendingUser) : null;
+            addLog(`✅ Push2Web connected for ${user?.displayName || 'user'}`);
+            
+            // Clear pending data
+            sessionStorage.removeItem('pending_push2web_token');
+            sessionStorage.removeItem('pending_push2web_user');
+          }
+        });
+      }
+    }
+  }, [cameraState, isLoggedIn, subscribePush2Web, getPush2WebStatus, addLog]);
+
+  // Instagram redirect check
   useEffect(() => {
     const shouldRedirect = checkAndRedirect();
     
@@ -286,7 +320,7 @@ const CameraApp: React.FC = () => {
     }
   }, [addLog]);
 
-  // Auto-recovery on app focus/visibility (unchanged)
+  // Auto-recovery on app focus/visibility
   useEffect(() => {
     const handleFocus = () => {
       if (cameraState === 'ready') {
@@ -311,7 +345,6 @@ const CameraApp: React.FC = () => {
     };
   }, [cameraState, addLog, restoreCameraFeed]);
 
-  // All other callback functions remain unchanged...
   const initializeApp = useCallback(async () => {
     if (cameraState === 'ready') {
       addLog('📱 Camera already ready');
@@ -544,47 +577,34 @@ const CameraApp: React.FC = () => {
         isFlipped={isFlipped}
       />
 
-      {/* Push2Web Login Button - NOW VISIBLE */}
-      {!isLoggedIn && !isFullscreen && isReady && (
-        <button
-          onClick={() => setShowLogin(true)}
-          className="absolute top-4 left-4 z-20 w-12 h-12 bg-yellow-500 hover:bg-yellow-600 rounded-full flex items-center justify-center text-black transition-colors"
-          aria-label="Login for Push2Web"
-        >
-          <LogIn className="w-6 h-6" />
-        </button>
-      )}
-
-      {/* Push2Web Status Indicator */}
-      {isLoggedIn && !isFullscreen && (
-        <div className="absolute top-4 left-4 z-20 bg-green-500/20 backdrop-blur-md rounded-lg px-3 py-1 border border-green-500/30">
-          <div className="text-green-300 text-xs font-medium flex items-center gap-1">
-            <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-            Push2Web Ready
+      {/* Push2Web Login - RESTORED and VISIBLE */}
+      {showLogin && !isLoggedIn && isReady && (
+        <div className="absolute top-4 left-4 z-30 max-w-xs">
+          <div className="bg-black/80 backdrop-blur-md rounded-lg p-4 border border-white/20">
+            <div className="text-white text-sm mb-3 flex items-center gap-2">
+              <span>🎯</span>
+              <span>Push2Web Login</span>
+            </div>
+            <LoginKit
+              onLogin={handleSnapchatLogin}
+              onError={(error) => addLog(`❌ Login error: ${error}`)}
+              addLog={addLog}
+            />
           </div>
         </div>
       )}
 
-      {/* Push2Web Login Modal */}
-      {showLogin && (
-        <div className="absolute inset-0 bg-black/80 backdrop-blur-sm z-30 flex items-center justify-center p-6">
-          <div className="bg-white/10 backdrop-blur-md rounded-xl p-6 max-w-md w-full mx-auto">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-white text-lg font-semibold flex items-center gap-2">
-                <span>👻</span>
-                Push2Web Login
-              </h3>
-              <button
-                onClick={() => setShowLogin(false)}
-                className="text-white/60 hover:text-white transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
+      {/* Push2Web Status - Show when logged in */}
+      {isLoggedIn && isReady && !isFullscreen && (
+        <div className="absolute top-4 right-4 z-20 max-w-xs">
+          <div className="bg-green-500/20 backdrop-blur-md rounded-lg p-3 border border-green-500/30">
+            <div className="text-green-300 text-xs flex items-center gap-2">
+              <span>✅</span>
+              <span>Push2Web Ready</span>
             </div>
-            
-            <Push2WebManager onLensReceived={(lensData) => {
-              addLog(`🎯 New lens received: ${lensData.name}`);
-            }} />
+            <div className="text-green-400 text-xs mt-1">
+              Ready to receive lenses from Lens Studio
+            </div>
           </div>
         </div>
       )}
@@ -680,7 +700,6 @@ const CameraApp: React.FC = () => {
   );
 };
 
-// Context providers remain unchanged
 const App: React.FC = () => {
   return (
     <CameraProvider>
