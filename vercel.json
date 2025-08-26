@@ -1,8 +1,14 @@
 {
+  "version": 2,
+  "functions": {
+    "api/**/*.js": {
+      "runtime": "nodejs18.x"
+    }
+  },
   "rewrites": [
     {
-      "source": "/fluid-hat/(.*)",
-      "destination": "/index.html"
+      "source": "/api/(.*)",
+      "destination": "/api/$1"
     },
     {
       "source": "/(.*)",
@@ -23,5 +29,10 @@
         }
       ]
     }
-  ]
+  ],
+  "env": {
+    "VITE_SNAPCHAT_CLIENT_ID": "@snapchat_client_id",
+    "VITE_SNAPCHAT_CLIENT_SECRET": "@snapchat_client_secret",
+    "VITE_SNAPCHAT_REDIRECT_URI": "@snapchat_redirect_uri"
+  }
 }

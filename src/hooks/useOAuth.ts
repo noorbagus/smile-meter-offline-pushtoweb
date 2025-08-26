@@ -1,3 +1,4 @@
+// src/hooks/useOAuth.ts - Updated untuk server-side flow
 import { useState, useEffect, useCallback } from 'react';
 
 export interface OAuthUser {
@@ -26,6 +27,7 @@ export const useOAuth = (addLog: (message: string) => void) => {
     error: null
   });
 
+  // Handle OAuth success from URL parameters
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const oauthSuccess = urlParams.get('oauth_success');
@@ -36,6 +38,8 @@ export const useOAuth = (addLog: (message: string) => void) => {
     if (error) {
       addLog(`❌ OAuth error: ${error}`);
       setState(prev => ({ ...prev, error, isLoading: false }));
+      
+      // Clean URL
       window.history.replaceState({}, '', window.location.pathname);
       return;
     }
@@ -55,11 +59,13 @@ export const useOAuth = (addLog: (message: string) => void) => {
           isLoading: false
         }));
 
+        // Store in sessionStorage for persistence
         sessionStorage.setItem('oauth_token', accessToken);
         if (userInfo) {
           sessionStorage.setItem('oauth_user', JSON.stringify(userInfo));
         }
 
+        // Clean URL
         window.history.replaceState({}, '', window.location.pathname);
         
       } catch (parseError) {
@@ -69,6 +75,7 @@ export const useOAuth = (addLog: (message: string) => void) => {
     }
   }, [addLog]);
 
+  // Restore session on page load
   useEffect(() => {
     const storedToken = sessionStorage.getItem('oauth_token');
     const storedUser = sessionStorage.getItem('oauth_user');
@@ -96,6 +103,7 @@ export const useOAuth = (addLog: (message: string) => void) => {
     addLog('🔐 Redirecting to Snapchat OAuth...');
     setState(prev => ({ ...prev, isLoading: true, error: null }));
     
+    // Redirect ke server-side OAuth endpoint
     window.location.href = '/api/auth/login';
   }, [addLog]);
 

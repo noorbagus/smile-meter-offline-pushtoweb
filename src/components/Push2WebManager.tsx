@@ -1,4 +1,5 @@
-import React from 'react';
+// src/components/Push2WebManager.tsx - Updated untuk server OAuth
+import React, { useEffect, useState } from 'react';
 import { useOAuth } from '../hooks/useOAuth';
 import { useCameraContext } from '../context/CameraContext';
 
@@ -7,7 +8,7 @@ interface Push2WebManagerProps {
 }
 
 export const Push2WebManager: React.FC<Push2WebManagerProps> = ({ onLensReceived }) => {
-  const { addLog } = useCameraContext();
+  const { addLog, subscribePush2Web, getPush2WebStatus } = useCameraContext();
   const { 
     isLoggedIn, 
     accessToken, 
@@ -18,6 +19,46 @@ export const Push2WebManager: React.FC<Push2WebManagerProps> = ({ onLensReceived
     logout, 
     clearError 
   } = useOAuth(addLog);
+  
+  const [push2WebStatus, setPush2WebStatus] = useState({
+    available: false,
+    subscribed: false,
+    session: false,
+    repository: false
+  });
+
+  // Update Push2Web status
+  useEffect(() => {
+    const status = getPush2WebStatus();
+    setPush2WebStatus(status);
+  }, [getPush2WebStatus]);
+
+  // Auto-subscribe when logged in
+  useEffect(() => {
+    if (isLoggedIn && accessToken && !push2WebStatus.subscribed) {
+      const subscribeAsync = async () => {
+        try {
+          addLog('🔗 Auto-subscribing to Push2Web...');
+          const success = await subscribePush2Web(accessToken);
+          if (success) {
+            addLog('✅ Push2Web subscription successful');
+            // Update status
+            const newStatus = getPush2WebStatus();
+            setPush2WebStatus(newStatus);
+          } else {
+            addLog('❌ Push2Web subscription failed');
+          }
+        } catch (error) {
+          addLog(`❌ Push2Web subscription error: ${error}`);
+        }
+      };
+      
+      // Delay subscription to ensure Camera Kit is ready
+      setTimeout(subscribeAsync, 1000);
+    }
+  }, [isLoggedIn, accessToken, push2WebStatus.subscribed, subscribePush2Web, addLog, getPush2WebStatus]);
+
+  const isPush2WebReady = isLoggedIn && accessToken && push2WebStatus.subscribed;
 
   return (
     <div className="space-y-4">
@@ -43,9 +84,23 @@ export const Push2WebManager: React.FC<Push2WebManagerProps> = ({ onLensReceived
           </div>
           
           <div className="flex justify-between">
-            <span className="text-white/70">Push2Web Ready:</span>
-            <span className={isLoggedIn && accessToken ? 'text-green-400' : 'text-orange-400'}>
-              {isLoggedIn && accessToken ? '✅ Ready' : '⏳ Waiting'}
+            <span className="text-white/70">Push2Web Available:</span>
+            <span className={push2WebStatus.available ? 'text-green-400' : 'text-red-400'}>
+              {push2WebStatus.available ? '✅ Ready' : '❌ Not available'}
+            </span>
+          </div>
+          
+          <div className="flex justify-between">
+            <span className="text-white/70">Subscribed:</span>
+            <span className={push2WebStatus.subscribed ? 'text-green-400' : 'text-orange-400'}>
+              {push2WebStatus.subscribed ? '✅ Active' : '⏳ Waiting'}
+            </span>
+          </div>
+          
+          <div className="flex justify-between">
+            <span className="text-white/70">Overall Status:</span>
+            <span className={isPush2WebReady ? 'text-green-400' : 'text-orange-400'}>
+              {isPush2WebReady ? '🟢 Ready for Lens Studio' : '🟡 Not ready'}
             </span>
           </div>
         </div>
@@ -54,6 +109,9 @@ export const Push2WebManager: React.FC<Push2WebManagerProps> = ({ onLensReceived
           <div className="mt-3 p-3 bg-green-500/10 rounded">
             <p className="text-green-300 font-medium text-sm">
               Logged in as: {user.displayName}
+            </p>
+            <p className="text-green-400/70 text-xs">
+              ID: {user.externalId}
             </p>
             {user.bitmoji?.avatarUrl && (
               <img 
@@ -89,7 +147,7 @@ export const Push2WebManager: React.FC<Push2WebManagerProps> = ({ onLensReceived
           onClick={logout}
           className="w-full px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
         >
-          👋 Logout
+          👋 Logout from Snapchat
         </button>
       )}
 
@@ -114,10 +172,10 @@ export const Push2WebManager: React.FC<Push2WebManagerProps> = ({ onLensReceived
         <div className="bg-blue-500/10 rounded p-3">
           <p className="font-medium text-blue-300 mb-1">🎯 How to use Push2Web:</p>
           <ol className="space-y-1 pl-4">
-            <li>1. Login with Snapchat above</li>
+            <li>1. Login with Snapchat above ☝️</li>
             <li>2. Open Lens Studio with same account</li>
-            <li>3. Click "Send to Camera Kit"</li>
-            <li>4. Lens appears automatically!</li>
+            <li>3. Click "Send to Camera Kit" in dropdown</li>
+            <li>4. Lens appears automatically in web app! 🎉</li>
           </ol>
         </div>
         
@@ -125,8 +183,9 @@ export const Push2WebManager: React.FC<Push2WebManagerProps> = ({ onLensReceived
           <p className="font-medium text-orange-300 mb-1">⚠️ Requirements:</p>
           <ul className="space-y-1 pl-4 text-xs">
             <li>• Same Snapchat account in Lens Studio</li>
-            <li>• Staging OAuth token only</li>
+            <li>• Staging OAuth client ID required</li>
             <li>• Account must be in Demo Users list</li>
+            <li>• Push2Web scope: camkit_lens_push_to_device</li>
           </ul>
         </div>
       </div>
