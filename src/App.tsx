@@ -1,4 +1,4 @@
-// src/App.tsx - Fullscreen implementation with floating buttons
+// src/App.tsx - Login UI enabled untuk Push2Web
 import React, { useState, useEffect, useCallback } from 'react';
 import { 
   CameraProvider, 
@@ -17,8 +17,9 @@ import {
   RenderingModal
 } from './components';
 import { LoginKit } from './components/LoginKit';
+import { Push2WebManager } from './components/Push2WebManager';
 import { checkAndRedirect, isInstagramBrowser, retryRedirect } from './utils/instagramBrowserDetector';
-import { Maximize, X } from 'lucide-react';
+import { Maximize, X, LogIn } from 'lucide-react';
 
 const CameraApp: React.FC = () => {
   const [isFlipped, setIsFlipped] = useState<boolean>(false);
@@ -32,7 +33,7 @@ const CameraApp: React.FC = () => {
   const [tapCount, setTapCount] = useState<number>(0);
   const [exitButtonTimer, setExitButtonTimer] = useState<NodeJS.Timeout | null>(null);
   
-  // Push2Web login state - HIDDEN UI
+  // Push2Web login state - NOW VISIBLE
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
   const [showLogin, setShowLogin] = useState<boolean>(false);
 
@@ -76,12 +77,11 @@ const CameraApp: React.FC = () => {
     setShowRenderingModal
   } = useRecordingContext();
 
-  // Fullscreen functions
+  // Fullscreen functions (unchanged)
   const enterFullscreen = useCallback(async () => {
     try {
       await document.documentElement.requestFullscreen();
       
-      // Lock orientation to portrait
       if ('orientation' in screen && 'lock' in screen.orientation) {
         try {
           await (screen.orientation as any).lock('portrait');
@@ -91,9 +91,7 @@ const CameraApp: React.FC = () => {
         }
       }
       
-      // Apply fullscreen lock class
       document.body.classList.add('fullscreen-locked');
-      
       setIsFullscreen(true);
       addLog('🖥️ Fullscreen mode activated');
       
@@ -108,10 +106,8 @@ const CameraApp: React.FC = () => {
         await document.exitFullscreen();
       }
       
-      // Remove fullscreen lock class
       document.body.classList.remove('fullscreen-locked');
       
-      // Unlock orientation
       if ('orientation' in screen && 'unlock' in screen.orientation) {
         try {
           (screen.orientation as any).unlock();
@@ -139,14 +135,13 @@ const CameraApp: React.FC = () => {
       setShowExitButton(true);
       addLog('📱 Long press detected - showing exit button');
       
-      // Auto-hide exit button after 5 seconds
       const hideTimer = setTimeout(() => {
         setShowExitButton(false);
         addLog('⏰ Exit button auto-hidden');
       }, 5000);
       
       setExitButtonTimer(hideTimer);
-    }, 1500); // 1.5 second long press
+    }, 1500);
     
     setLongPressTimer(timer);
   }, [isFullscreen, addLog]);
@@ -163,15 +158,12 @@ const CameraApp: React.FC = () => {
     
     setTapCount(prev => {
       if (prev === 0) {
-        // First tap
-        setTimeout(() => setTapCount(0), 500); // Reset after 500ms
+        setTimeout(() => setTapCount(0), 500);
         return 1;
       } else if (prev === 1) {
-        // Second tap - show exit button
         setShowExitButton(true);
         addLog('👆 Double tap detected - showing exit button');
         
-        // Auto-hide exit button after 5 seconds
         const hideTimer = setTimeout(() => {
           setShowExitButton(false);
           addLog('⏰ Exit button auto-hidden');
@@ -184,12 +176,11 @@ const CameraApp: React.FC = () => {
     });
   }, [isFullscreen, addLog]);
 
-  // Prevent all gestures in fullscreen
+  // Prevent all gestures in fullscreen (unchanged)
   useEffect(() => {
     if (!isFullscreen) return;
 
     const preventGestures = (e: TouchEvent) => {
-      // Allow single touch for AR interaction
       if (e.touches.length > 1) {
         e.preventDefault();
       }
@@ -204,7 +195,6 @@ const CameraApp: React.FC = () => {
     };
 
     const preventKeyboard = (e: KeyboardEvent) => {
-      // Prevent F11, Escape, etc.
       if (e.key === 'F11' || e.key === 'Escape') {
         e.preventDefault();
       }
@@ -223,7 +213,7 @@ const CameraApp: React.FC = () => {
     };
   }, [isFullscreen]);
 
-  // Monitor fullscreen changes
+  // Monitor fullscreen changes (unchanged)
   useEffect(() => {
     const handleFullscreenChange = () => {
       const isCurrentlyFullscreen = !!document.fullscreenElement;
@@ -249,7 +239,7 @@ const CameraApp: React.FC = () => {
     };
   }, [isFullscreen, addLog]);
 
-  // Cleanup timers
+  // Cleanup timers (unchanged)
   useEffect(() => {
     return () => {
       if (longPressTimer) {
@@ -261,10 +251,11 @@ const CameraApp: React.FC = () => {
     };
   }, [longPressTimer, exitButtonTimer]);
 
-  // Handle Snapchat login - functionality preserved but UI hidden
-  const handleSnapchatLogin = useCallback(async (accessToken: string) => {
+  // Handle Snapchat login - NOW ACTIVE
+  const handleSnapchatLogin = useCallback(async (accessToken: string, userInfo?: any) => {
     try {
-      addLog('🔗 Snapchat login successful, subscribing to Push2Web...');
+      addLog(`🔗 Snapchat login successful: ${userInfo?.displayName || 'User'}`);
+      
       const success = await subscribePush2Web(accessToken);
       
       if (success) {
@@ -279,7 +270,7 @@ const CameraApp: React.FC = () => {
     }
   }, [subscribePush2Web, addLog]);
 
-  // Instagram redirect check
+  // Instagram redirect check (unchanged)
   useEffect(() => {
     const shouldRedirect = checkAndRedirect();
     
@@ -295,7 +286,7 @@ const CameraApp: React.FC = () => {
     }
   }, [addLog]);
 
-  // Auto-recovery on app focus/visibility
+  // Auto-recovery on app focus/visibility (unchanged)
   useEffect(() => {
     const handleFocus = () => {
       if (cameraState === 'ready') {
@@ -320,6 +311,7 @@ const CameraApp: React.FC = () => {
     };
   }, [cameraState, addLog, restoreCameraFeed]);
 
+  // All other callback functions remain unchanged...
   const initializeApp = useCallback(async () => {
     if (cameraState === 'ready') {
       addLog('📱 Camera already ready');
@@ -552,16 +544,59 @@ const CameraApp: React.FC = () => {
         isFlipped={isFlipped}
       />
 
-      {/* Push2Web Login - COMPLETELY HIDDEN */}
-      {/* All Push2Web UI components removed from rendering */}
+      {/* Push2Web Login Button - NOW VISIBLE */}
+      {!isLoggedIn && !isFullscreen && isReady && (
+        <button
+          onClick={() => setShowLogin(true)}
+          className="absolute top-4 left-4 z-20 w-12 h-12 bg-yellow-500 hover:bg-yellow-600 rounded-full flex items-center justify-center text-black transition-colors"
+          aria-label="Login for Push2Web"
+        >
+          <LogIn className="w-6 h-6" />
+        </button>
+      )}
 
-      {/* Camera Controls - Already hidden via updated component */}
+      {/* Push2Web Status Indicator */}
+      {isLoggedIn && !isFullscreen && (
+        <div className="absolute top-4 left-4 z-20 bg-green-500/20 backdrop-blur-md rounded-lg px-3 py-1 border border-green-500/30">
+          <div className="text-green-300 text-xs font-medium flex items-center gap-1">
+            <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+            Push2Web Ready
+          </div>
+        </div>
+      )}
+
+      {/* Push2Web Login Modal */}
+      {showLogin && (
+        <div className="absolute inset-0 bg-black/80 backdrop-blur-sm z-30 flex items-center justify-center p-6">
+          <div className="bg-white/10 backdrop-blur-md rounded-xl p-6 max-w-md w-full mx-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-white text-lg font-semibold flex items-center gap-2">
+                <span>👻</span>
+                Push2Web Login
+              </h3>
+              <button
+                onClick={() => setShowLogin(false)}
+                className="text-white/60 hover:text-white transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <Push2WebManager onLensReceived={(lensData) => {
+              addLog(`🎯 New lens received: ${lensData.name}`);
+            }} />
+          </div>
+        </div>
+      )}
+
+      {/* Camera Controls */}
       <CameraControls
         onSettings={() => setShowSettings(true)}
         onFlip={() => setIsFlipped(!isFlipped)}
+        isFullscreen={isFullscreen}
       />
 
-      {/* Recording Controls - Already hidden via updated component */}
+      {/* Recording Controls */}
       <RecordingControls
         recordingState={recordingState}
         recordingTime={recordingTime}
@@ -572,7 +607,7 @@ const CameraApp: React.FC = () => {
         disabled={!isReady}
       />
 
-      {/* Fullscreen Entry Button - Show only when NOT in fullscreen */}
+      {/* Fullscreen Entry Button */}
       {!isFullscreen && isReady && (
         <button
           onClick={enterFullscreen}
@@ -583,7 +618,7 @@ const CameraApp: React.FC = () => {
         </button>
       )}
 
-      {/* Exit Fullscreen Button - Show only when in fullscreen and exit button is visible */}
+      {/* Exit Fullscreen Button */}
       {isFullscreen && showExitButton && (
         <button
           onClick={() => {
@@ -645,6 +680,7 @@ const CameraApp: React.FC = () => {
   );
 };
 
+// Context providers remain unchanged
 const App: React.FC = () => {
   return (
     <CameraProvider>
