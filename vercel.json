@@ -9,11 +9,6 @@
       "destination": "/index.html"
     }
   ],
-  "functions": {
-    "api/**/*.js": {
-      "runtime": "@vercel/node@18.15.0"
-    }
-  },
   "headers": [
     {
       "source": "/(.*)",
