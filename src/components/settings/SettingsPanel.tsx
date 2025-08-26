@@ -1,4 +1,3 @@
-// src/components/settings/SettingsPanel.tsx - Complete with frame size control
 import React, { useState, useEffect } from 'react';
 import { X, Download } from 'lucide-react';
 import { detectAndroid } from '../../utils/androidRecorderFix';
@@ -32,6 +31,7 @@ interface SettingsPanelProps {
   currentStream?: MediaStream | null;
   canvas?: HTMLCanvasElement | null;
   containerRef?: React.RefObject<HTMLDivElement>;
+  children?: React.ReactNode;
 }
 
 export const SettingsPanel: React.FC<SettingsPanelProps> = ({
@@ -41,7 +41,8 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   onExportLogs,
   currentStream,
   canvas,
-  containerRef
+  containerRef,
+  children
 }) => {
   const { frameSize, updateFrameSize, getFrameDimensions } = useFrameSize();
   
@@ -63,14 +64,12 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     actualFPS: null
   });
 
-  // Test camera capabilities
   useEffect(() => {
     const testCameraCapabilities = async () => {
       try {
         const constraints = navigator.mediaDevices?.getSupportedConstraints?.() || {};
         const constraintsCount = Object.keys(constraints).length;
 
-        // Test front camera
         let frontCap = null;
         try {
           const frontStream = await navigator.mediaDevices.getUserMedia({
@@ -92,7 +91,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
           // Front camera not available
         }
 
-        // Test back camera
         let backCap = null;
         try {
           const backStream = await navigator.mediaDevices.getUserMedia({
@@ -114,7 +112,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
           // Back camera not available
         }
 
-        // Test supported formats
         const formats = [
           'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
           'video/mp4;codecs=h264,aac',
@@ -142,7 +139,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     }
   }, [isOpen]);
 
-  // Update display info
   useEffect(() => {
     const updateDisplayInfo = () => {
       let canvasInfo = null;
@@ -179,7 +175,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
     }
   }, [isOpen, canvas, containerRef]);
 
-  // Update AR info
   useEffect(() => {
     const updateARInfo = () => {
       let cameraInput = null;
@@ -433,6 +428,9 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
               <p>• Close other apps for better performance</p>
             </div>
           </div>
+
+          {/* Children - Push2WebManager will be rendered here */}
+          {children}
         </div>
       </div>
     </div>

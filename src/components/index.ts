@@ -1,4 +1,3 @@
-// src/components/index.ts
 // UI Components
 export * from './ui';
 
@@ -13,3 +12,4 @@ export * from './settings';
 
 // Login Components
 export { LoginKit } from './LoginKit';
+export { Push2WebManager } from './Push2WebManager';  // ← ADD THIS
