@@ -1,134 +1,41 @@
-// src/hooks/useOAuth.ts - Frontend OAuth client for Push2Web
-import { useState, useEffect, useCallback } from 'react';
-
-export interface OAuthUser {
-  displayName: string;
-  externalId: string;
-  bitmoji?: {
-    avatarId: string;
-    avatarUrl: string;
-  };
-}
-
-export interface OAuthState {
-  isLoggedIn: boolean;
-  accessToken: string | null;
-  user: OAuthUser | null;
-  isLoading: boolean;
-  error: string | null;
-}
-
-export const useOAuth = (addLog: (message: string) => void) => {
-  const [state, setState] = useState<OAuthState>({
-    isLoggedIn: false,
-    accessToken: null,
-    user: null,
-    isLoading: false,
-    error: null
-  });
-
-  // Check for OAuth callback parameters on mount
-  useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const oauthSuccess = urlParams.get('oauth_success');
-    const accessToken = urlParams.get('access_token');
-    const userInfoStr = urlParams.get('user_info');
-    const error = urlParams.get('error');
-
-    if (error) {
-      addLog(`❌ OAuth error: ${error}`);
-      setState(prev => ({ ...prev, error, isLoading: false }));
-      // Clean URL
-      window.history.replaceState({}, '', window.location.pathname);
-      return;
+export default async function handler(req, res) {
+    if (req.method !== 'POST') {
+      return res.status(405).json({ error: 'Method not allowed' });
     }
-
-    if (oauthSuccess && accessToken) {
-      try {
-        const userInfo = userInfoStr ? JSON.parse(decodeURIComponent(userInfoStr)) : null;
-        
-        addLog(`✅ OAuth success: ${userInfo?.displayName || 'User'}`);
-        
-        setState(prev => ({
-          ...prev,
-          isLoggedIn: true,
-          accessToken,
-          user: userInfo,
-          error: null,
-          isLoading: false
-        }));
-
-        // Store in session for persistence
-        sessionStorage.setItem('oauth_token', accessToken);
-        if (userInfo) {
-          sessionStorage.setItem('oauth_user', JSON.stringify(userInfo));
-        }
-
-        // Clean URL
-        window.history.replaceState({}, '', window.location.pathname);
-        
-      } catch (parseError) {
-        addLog(`❌ Failed to parse user info: ${parseError}`);
-        setState(prev => ({ ...prev, error: 'Invalid user data', isLoading: false }));
+  
+    const { refresh_token } = req.body;
+  
+    if (!refresh_token) {
+      return res.status(400).json({ error: 'Refresh token required' });
+    }
+  
+    try {
+      const tokenResponse = await fetch('https://accounts.snapchat.com/accounts/oauth2/token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Authorization': `Basic ${Buffer.from(`${process.env.VITE_SNAPCHAT_CLIENT_ID}:${process.env.VITE_SNAPCHAT_CLIENT_SECRET}`).toString('base64')}`
+        },
+        body: new URLSearchParams({
+          grant_type: 'refresh_token',
+          refresh_token: refresh_token
+        })
+      });
+  
+      if (!tokenResponse.ok) {
+        throw new Error(`Token refresh failed: ${tokenResponse.status}`);
       }
+  
+      const tokenData = await tokenResponse.json();
+      
+      res.json({
+        access_token: tokenData.access_token,
+        refresh_token: tokenData.refresh_token,
+        expires_in: tokenData.expires_in
+      });
+  
+    } catch (error) {
+      console.error('Token refresh error:', error);
+      res.status(500).json({ error: 'Token refresh failed' });
     }
-  }, [addLog]);
-
-  // Check session storage on mount
-  useEffect(() => {
-    const storedToken = sessionStorage.getItem('oauth_token');
-    const storedUser = sessionStorage.getItem('oauth_user');
-    
-    if (storedToken) {
-      try {
-        const user = storedUser ? JSON.parse(storedUser) : null;
-        setState(prev => ({
-          ...prev,
-          isLoggedIn: true,
-          accessToken: storedToken,
-          user,
-          isLoading: false
-        }));
-        addLog(`🔄 Restored OAuth session: ${user?.displayName || 'User'}`);
-      } catch (error) {
-        addLog(`❌ Failed to restore session: ${error}`);
-        sessionStorage.removeItem('oauth_token');
-        sessionStorage.removeItem('oauth_user');
-      }
-    }
-  }, [addLog]);
-
-  const login = useCallback(() => {
-    addLog('🔐 Redirecting to Snapchat OAuth...');
-    setState(prev => ({ ...prev, isLoading: true, error: null }));
-    
-    // Redirect to our API endpoint
-    window.location.href = '/api/auth/login';
-  }, [addLog]);
-
-  const logout = useCallback(() => {
-    addLog('👋 Logging out...');
-    
-    setState({
-      isLoggedIn: false,
-      accessToken: null,
-      user: null,
-      isLoading: false,
-      error: null
-    });
-    
-    sessionStorage.removeItem('oauth_token');
-    sessionStorage.removeItem('oauth_user');
-  }, [addLog]);
-
-  const clearError = useCallback(() => {
-    setState(prev => ({ ...prev, error: null }));
-  }, []);
-
-  return {
-    ...state,
-    login,
-    logout,
-    clearError
-  };
-};
+  }

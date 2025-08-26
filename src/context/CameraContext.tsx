@@ -1,4 +1,3 @@
-// src/context/CameraContext.tsx - Fixed TypeScript errors
 import React, { createContext, useContext, useRef } from 'react';
 import { useCameraKit, useCameraPermissions, useDebugLogger } from '../hooks';
 import type { CameraState, PermissionState, ErrorInfo } from '../hooks';
@@ -19,6 +18,15 @@ interface CameraContextValue {
   isReady: boolean;
   isInitializing: boolean;
   
+  // Push2Web
+  subscribePush2Web: (accessToken: string) => Promise<boolean>;
+  getPush2WebStatus: () => {
+    available: boolean;
+    subscribed: boolean;
+    session: boolean;
+    repository: boolean;
+  };
+  
   // Permissions
   permissionState: PermissionState;
   errorInfo: ErrorInfo | null;
@@ -33,15 +41,6 @@ interface CameraContextValue {
   addLog: (message: string, level?: 'info' | 'warning' | 'error' | 'success') => void;
   clearLogs: () => void;
   exportLogs: () => void;
-  
-  // Push2Web Functions
-  subscribePush2Web: (accessToken: string) => Promise<boolean>;
-  getPush2WebStatus: () => {
-    available: boolean;
-    subscribed: boolean;
-    session: boolean;
-    repository: boolean;
-  };
   
   // Refs
   cameraFeedRef: React.RefObject<HTMLDivElement>;
@@ -88,10 +87,10 @@ export const CameraProvider: React.FC<CameraProviderProps> = ({ children }) => {
     getCanvas,
     getStream,
     restoreCameraFeed,
-    isReady,
-    isInitializing,
     subscribePush2Web,
-    getPush2WebStatus
+    getPush2WebStatus,
+    isReady,
+    isInitializing
   } = useCameraKit(addLog);
 
   const value: CameraContextValue = {
@@ -110,6 +109,10 @@ export const CameraProvider: React.FC<CameraProviderProps> = ({ children }) => {
     isReady,
     isInitializing,
     
+    // Push2Web
+    subscribePush2Web,
+    getPush2WebStatus,
+    
     // Permissions
     permissionState,
     errorInfo,
@@ -124,10 +127,6 @@ export const CameraProvider: React.FC<CameraProviderProps> = ({ children }) => {
     addLog,
     clearLogs,
     exportLogs,
-    
-    // Push2Web Functions
-    subscribePush2Web,
-    getPush2WebStatus,
     
     // Refs
     cameraFeedRef
