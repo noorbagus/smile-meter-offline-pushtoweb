@@ -1,4 +1,4 @@
-// src/components/LoginKit.tsx - Updated with Push2Web scope
+// src/components/LoginKit.tsx - Fixed Push2Web integration
 import React, { useEffect, useState, useRef } from 'react';
 
 interface LoginKitProps {
@@ -44,9 +44,7 @@ export const LoginKit: React.FC<LoginKitProps> = ({ onLogin, onError, addLog }) 
     const script = document.createElement('script');
     script.src = 'https://sdk.snapkit.com/js/v1/login.js';
     script.onload = () => addLog?.('📱 SDK script loaded');
-    script.onerror = () => {
-      setTimeout(() => setError('SDK load failed'), 100);
-    };
+    script.onerror = () => setError('SDK load failed');
     document.head.appendChild(script);
 
     return () => document.getElementById('loginkit-sdk')?.remove();
@@ -56,20 +54,18 @@ export const LoginKit: React.FC<LoginKitProps> = ({ onLogin, onError, addLog }) 
   useEffect(() => {
     if (sdkReady && !mountAttempted.current) {
       mountAttempted.current = true;
-      setTimeout(() => {
-        mountButton();
-      }, 100);
+      setTimeout(mountButton, 100);
     }
   }, [sdkReady]);
 
   const mountButton = () => {
     if (!window.snap?.loginkit) {
-      setTimeout(() => setError('SDK not available'), 100);
+      setError('SDK not available');
       return;
     }
 
     if (!clientId || !redirectURI) {
-      setTimeout(() => setError('Missing OAuth config'), 100);
+      setError('Missing OAuth config');
       return;
     }
 
@@ -77,12 +73,11 @@ export const LoginKit: React.FC<LoginKitProps> = ({ onLogin, onError, addLog }) 
       window.snap.loginkit.mountButton('snap-login-button', {
         clientId,
         redirectURI,
-        // Updated scope list with Push2Web lens push scope
         scopeList: [
           'user.display_name',
           'user.external_id', 
           'user.bitmoji.avatar',
-          'camkit_lens_push_to_device' // NEW: Push2Web scope
+          'camkit_lens_push_to_device'
         ],
         handleResponseCallback: async () => {
           addLog?.('🔐 Login callback triggered');
@@ -90,7 +85,6 @@ export const LoginKit: React.FC<LoginKitProps> = ({ onLogin, onError, addLog }) 
           setError(null);
           
           try {
-            // Longer delay for Snapchat API
             await new Promise(resolve => setTimeout(resolve, 1500));
             
             const result = await window.snap!.loginkit.fetchUserInfo();
@@ -103,17 +97,13 @@ export const LoginKit: React.FC<LoginKitProps> = ({ onLogin, onError, addLog }) 
             addLog?.(`✅ Login success: ${userInfo.displayName}`);
             addLog?.(`🎯 Push2Web scope granted for user: ${userInfo.externalId}`);
             
-            // Generate mock token with Push2Web capabilities
             const mockToken = `snap_push2web_${userInfo.externalId}_${Date.now()}`;
             onLogin(mockToken, userInfo);
             
           } catch (err: any) {
-            // Better error handling
-            const errorMessage = err?.message || err?.toString() || JSON.stringify(err) || 'Unknown error';
+            const errorMessage = err?.message || err?.toString() || 'Authentication failed';
             addLog?.(`❌ Login error: ${errorMessage}`);
-            setTimeout(() => {
-              setError('Authentication failed - please try again');
-            }, 500);
+            setError('Authentication failed - please try again');
           } finally {
             setIsLoading(false);
           }
@@ -125,7 +115,7 @@ export const LoginKit: React.FC<LoginKitProps> = ({ onLogin, onError, addLog }) 
       
     } catch (err: any) {
       addLog?.(`❌ Button mount error: ${err?.message || err}`);
-      setTimeout(() => setError('Button mount failed'), 100);
+      setError('Button mount failed');
     }
   };
 
