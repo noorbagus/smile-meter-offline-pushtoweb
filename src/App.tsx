@@ -1,4 +1,4 @@
-// src/App.tsx - Fixed TypeScript errors
+// src/App.tsx - Fixed variable declarations
 import React, { useState, useEffect, useCallback } from 'react';
 import { 
   CameraProvider, 
@@ -21,6 +21,7 @@ import { checkAndRedirect, isInstagramBrowser, retryRedirect } from './utils/ins
 import { Maximize, X } from 'lucide-react';
 
 const CameraApp: React.FC = () => {
+  // All state declarations first
   const [isFlipped, setIsFlipped] = useState<boolean>(false);
   const [showSettings, setShowSettings] = useState<boolean>(false);
   const [appReady, setAppReady] = useState<boolean>(false);
@@ -30,12 +31,13 @@ const CameraApp: React.FC = () => {
   const [showExitButton, setShowExitButton] = useState<boolean>(false);
   const [longPressTimer, setLongPressTimer] = useState<NodeJS.Timeout | null>(null);
   const [exitButtonTimer, setExitButtonTimer] = useState<NodeJS.Timeout | null>(null);
-  const [tapCount, setTapCount] = useState<number>(0);
   
-  // Push2Web login state
+  // Push2Web state
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
   const [showLogin, setShowLogin] = useState<boolean>(false);
+  const [enablePush2Web, setEnablePush2Web] = useState<boolean>(true);
 
+  // Context hooks
   const {
     cameraState,
     currentFacingMode,
@@ -76,7 +78,24 @@ const CameraApp: React.FC = () => {
     setShowRenderingModal
   } = useRecordingContext();
 
-  // FIXED: Move initializeApp before useEffect
+  // Functions that depend on state
+  const handleSnapchatLogin = useCallback(async (accessToken: string, userInfo: any) => {
+    try {
+      addLog('🔗 Snapchat login successful, subscribing to Push2Web...');
+      const success = await subscribePush2Web(accessToken);
+      
+      if (success) {
+        setIsLoggedIn(true);
+        setShowLogin(false);
+        addLog('✅ Push2Web ready - can receive lenses from Lens Studio');
+      } else {
+        addLog('❌ Push2Web subscription failed');
+      }
+    } catch (error) {
+      addLog(`❌ Login error: ${error}`);
+    }
+  }, [subscribePush2Web, addLog]);
+
   const initializeApp = useCallback(async () => {
     if (cameraState === 'ready') {
       addLog('📱 Camera already ready');
@@ -95,33 +114,15 @@ const CameraApp: React.FC = () => {
       const success = await initializeCameraKit(stream, cameraFeedRef);
       if (success) {
         addLog('🎉 App initialization complete');
-        // Auto-show login after camera ready
-        setShowLogin(true);
+        if (enablePush2Web && !isLoggedIn) {
+          setTimeout(() => setShowLogin(true), 2000);
+        }
       }
     } catch (error) {
       addLog(`❌ Initialization failed: ${error}`);
     }
-  }, [cameraState, addLog, checkCameraPermission, requestCameraStream, currentFacingMode, initializeCameraKit, cameraFeedRef]);
+  }, [cameraState, addLog, checkCameraPermission, requestCameraStream, currentFacingMode, initializeCameraKit, cameraFeedRef, enablePush2Web, isLoggedIn]);
 
-  // Handle Push2Web login
-  const handleSnapchatLogin = useCallback(async (accessToken: string, userInfo: any) => {
-    try {
-      addLog('🔗 Snapchat login successful, subscribing to Push2Web...');
-      const success = await subscribePush2Web(accessToken);
-      
-      if (success) {
-        setIsLoggedIn(true);
-        setShowLogin(false);
-        addLog('✅ Push2Web ready - can receive lenses from Lens Studio');
-      } else {
-        addLog('❌ Push2Web subscription failed');
-      }
-    } catch (error) {
-      addLog(`❌ Login error: ${error}`);
-    }
-  }, [subscribePush2Web, addLog]);
-
-  // Fullscreen handlers
   const enterFullscreen = useCallback(async () => {
     try {
       await document.documentElement.requestFullscreen();
@@ -163,144 +164,13 @@ const CameraApp: React.FC = () => {
     }
   }, [addLog]);
 
-  const handleLongPress = useCallback((e: React.TouchEvent | React.MouseEvent) => {
-    if (!isFullscreen) return;
-    e.preventDefault();
-    
-    const timer = setTimeout(() => {
-      setShowExitButton(true);
-      addLog('📱 Long press detected - showing exit button');
-      
-      const hideTimer = setTimeout(() => {
-        setShowExitButton(false);
-        addLog('⏰ Exit button auto-hidden');
-      }, 5000);
-      
-      setExitButtonTimer(hideTimer);
-    }, 1500);
-    
-    setLongPressTimer(timer);
-  }, [isFullscreen, addLog]);
-
-  const handleTouchEnd = useCallback(() => {
-    if (longPressTimer) {
-      clearTimeout(longPressTimer);
-      setLongPressTimer(null);
+  // Initialize app when ready
+  useEffect(() => {
+    if (appReady) {
+      addLog('🚀 App initialization starting...');
+      initializeApp();
     }
-  }, [longPressTimer]);
-
-  const handleDoubleTap = useCallback(() => {
-    if (!isFullscreen) return;
-    
-    setTapCount(prev => {
-      if (prev === 0) {
-        setTimeout(() => setTapCount(0), 500);
-        return 1;
-      } else if (prev === 1) {
-        setShowExitButton(true);
-        addLog('👆 Double tap detected - showing exit button');
-        
-        const hideTimer = setTimeout(() => {
-          setShowExitButton(false);
-          addLog('⏰ Exit button auto-hidden');
-        }, 5000);
-        
-        setExitButtonTimer(hideTimer);
-        return 0;
-      }
-      return 0;
-    });
-  }, [isFullscreen, addLog]);
-
-  const handleSwitchCamera = useCallback(async () => {
-    if (!isReady) return;
-    
-    try {
-      addLog('🔄 Switching camera...');
-      const newStream = await switchCamera();
-      if (newStream) {
-        const audioTracks = newStream.getAudioTracks();
-        addLog(`✅ Camera switched - Audio tracks: ${audioTracks.length}`);
-      }
-    } catch (error) {
-      addLog(`❌ Camera switch failed: ${error}`);
-    }
-  }, [isReady, switchCamera, addLog]);
-
-  const handleToggleRecording = useCallback(() => {
-    const canvas = getCanvas();
-    const stream = getStream();
-    
-    if (!canvas) {
-      addLog('❌ Canvas not available');
-      return;
-    }
-
-    if (stream) {
-      const audioTracks = stream.getAudioTracks();
-      const videoTracks = stream.getVideoTracks();
-      
-      addLog(`📊 Pre-recording stream check: ${videoTracks.length} video, ${audioTracks.length} audio tracks`);
-      
-      if (audioTracks.length === 0) {
-        addLog('🔇 CRITICAL WARNING: No audio tracks in camera stream!');
-      } else {
-        audioTracks.forEach((track, index) => {
-          addLog(`🎤 Audio track ${index}: ${track.label || 'Unknown'}, state: ${track.readyState}, enabled: ${track.enabled}`);
-        });
-      }
-    } else {
-      addLog('❌ No camera stream available for recording');
-      return;
-    }
-
-    toggleRecording(canvas, stream || undefined);
-  }, [getCanvas, getStream, toggleRecording, addLog]);
-
-  const handleReloadEffect = useCallback(async () => {
-    if (!isReady) {
-      addLog('❌ Cannot reload - camera not ready');
-      return;
-    }
-    
-    try {
-      addLog('🔄 Reloading AR effect...');
-      const success = await reloadLens();
-      
-      if (success) {
-        addLog('✅ AR effect reloaded successfully');
-      } else {
-        addLog('❌ Failed to reload AR effect');
-      }
-    } catch (error) {
-      addLog(`❌ Reload error: ${error}`);
-    }
-  }, [isReady, reloadLens, addLog]);
-
-  const handleRequestPermission = useCallback(async () => {
-    try {
-      addLog('🔒 Requesting camera + microphone permission...');
-      const stream = await requestPermission();
-      if (stream) {
-        const audioTracks = stream.getAudioTracks();
-        addLog(`✅ Permission granted with ${audioTracks.length} audio tracks`);
-        stream.getTracks().forEach(track => track.stop());
-        initializeApp();
-      }
-    } catch (error) {
-      addLog(`❌ Permission failed: ${error}`);
-    }
-  }, [requestPermission, initializeApp, addLog]);
-
-  const handleRetry = useCallback(() => {
-    addLog('🔄 Retrying app initialization...');
-    initializeApp();
-  }, [initializeApp, addLog]);
-
-  const handleRetryRedirect = useCallback(() => {
-    addLog('📱 Manual Instagram redirect retry...');
-    retryRedirect();
-  }, [addLog]);
+  }, [appReady, initializeApp, addLog]);
 
   // Instagram redirect check
   useEffect(() => {
@@ -318,114 +188,6 @@ const CameraApp: React.FC = () => {
     }
   }, [addLog]);
 
-  // Initialize app when ready
-  useEffect(() => {
-    if (appReady) {
-      addLog('🚀 App initialization starting...');
-      initializeApp();
-    }
-  }, [appReady, initializeApp, addLog]);
-
-  // Monitor fullscreen changes
-  useEffect(() => {
-    const handleFullscreenChange = () => {
-      const isCurrentlyFullscreen = !!document.fullscreenElement;
-      
-      if (isCurrentlyFullscreen !== isFullscreen) {
-        setIsFullscreen(isCurrentlyFullscreen);
-        
-        if (isCurrentlyFullscreen) {
-          document.body.classList.add('fullscreen-locked');
-          addLog('🖥️ Fullscreen activated by system');
-        } else {
-          document.body.classList.remove('fullscreen-locked');
-          setShowExitButton(false);
-          addLog('🖥️ Fullscreen deactivated by system');
-        }
-      }
-    };
-
-    document.addEventListener('fullscreenchange', handleFullscreenChange);
-    
-    return () => {
-      document.removeEventListener('fullscreenchange', handleFullscreenChange);
-    };
-  }, [isFullscreen, addLog]);
-
-  // Prevent gestures in fullscreen
-  useEffect(() => {
-    if (!isFullscreen) return;
-
-    const preventGestures = (e: TouchEvent) => {
-      if (e.touches.length > 1) {
-        e.preventDefault();
-      }
-    };
-
-    const preventScroll = (e: TouchEvent) => {
-      e.preventDefault();
-    };
-
-    const preventWheel = (e: WheelEvent) => {
-      e.preventDefault();
-    };
-
-    const preventKeyboard = (e: KeyboardEvent) => {
-      if (e.key === 'F11' || e.key === 'Escape') {
-        e.preventDefault();
-      }
-    };
-
-    document.addEventListener('touchstart', preventGestures, { passive: false });
-    document.addEventListener('touchmove', preventScroll, { passive: false });
-    document.addEventListener('wheel', preventWheel, { passive: false });
-    document.addEventListener('keydown', preventKeyboard);
-
-    return () => {
-      document.removeEventListener('touchstart', preventGestures);
-      document.removeEventListener('touchmove', preventScroll);
-      document.removeEventListener('wheel', preventWheel);
-      document.removeEventListener('keydown', preventKeyboard);
-    };
-  }, [isFullscreen]);
-
-  // Auto-recovery on app focus/visibility
-  useEffect(() => {
-    const handleFocus = () => {
-      if (cameraState === 'ready') {
-        addLog('🔄 App focused - checking camera feed...');
-        setTimeout(() => restoreCameraFeed(), 200);
-      }
-    };
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible' && cameraState === 'ready') {
-        addLog('👁️ App visible - restoring camera...');
-        setTimeout(() => restoreCameraFeed(), 100);
-      }
-    };
-
-    window.addEventListener('focus', handleFocus);
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    
-    return () => {
-      window.removeEventListener('focus', handleFocus);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, [cameraState, addLog, restoreCameraFeed]);
-
-  // Cleanup timers
-  useEffect(() => {
-    return () => {
-      if (longPressTimer) {
-        clearTimeout(longPressTimer);
-      }
-      if (exitButtonTimer) {
-        clearTimeout(exitButtonTimer);
-      }
-    };
-  }, [longPressTimer, exitButtonTimer]);
-
   // Show loading while checking/redirecting
   if (!appReady) {
     const isInInstagram = isInstagramBrowser();
@@ -438,7 +200,7 @@ const CameraApp: React.FC = () => {
             <h2 className="text-2xl font-bold mb-4">Opening in Safari..</h2>
             <p className="text-white/70 mb-6">For the best AR experience</p>
             <button
-              onClick={handleRetryRedirect}
+              onClick={() => retryRedirect()}
               className="bg-blue-500 hover:bg-blue-600 px-6 py-3 rounded-lg text-white font-medium"
             >
               Try Again
@@ -490,14 +252,7 @@ const CameraApp: React.FC = () => {
   }
 
   return (
-    <div 
-      className="fixed inset-0 bg-black flex flex-col"
-      onTouchStart={handleLongPress}
-      onTouchEnd={handleTouchEnd}
-      onMouseDown={handleLongPress}
-      onMouseUp={handleTouchEnd}
-      onClick={handleDoubleTap}
-    >
+    <div className="fixed inset-0 bg-black flex flex-col">
       {/* Camera Feed */}
       <CameraFeed
         cameraFeedRef={cameraFeedRef}
@@ -506,8 +261,8 @@ const CameraApp: React.FC = () => {
         isFlipped={isFlipped}
       />
 
-      {/* Push2Web Login Modal - NOW VISIBLE */}
-      {showLogin && !isLoggedIn && (
+      {/* Push2Web Login Modal */}
+      {enablePush2Web && showLogin && !isLoggedIn && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-40">
           <div className="bg-white/10 backdrop-blur-md rounded-xl p-6 max-w-sm w-full mx-auto">
             <div className="text-center mb-4">
@@ -521,12 +276,24 @@ const CameraApp: React.FC = () => {
               addLog={addLog}
             />
             
-            <button
-              onClick={() => setShowLogin(false)}
-              className="w-full mt-4 px-4 py-2 bg-gray-600 hover:bg-gray-700 rounded-lg text-white text-sm"
-            >
-              Skip for now
-            </button>
+            <div className="flex gap-2 mt-4">
+              <button
+                onClick={() => setShowLogin(false)}
+                className="flex-1 px-4 py-2 bg-gray-600 hover:bg-gray-700 rounded-lg text-white text-sm"
+              >
+                Skip for now
+              </button>
+              <button
+                onClick={() => {
+                  setEnablePush2Web(false);
+                  setShowLogin(false);
+                  addLog('🔇 Push2Web disabled');
+                }}
+                className="flex-1 px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg text-white text-sm"
+              >
+                Disable Push2Web
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -541,9 +308,15 @@ const CameraApp: React.FC = () => {
       <RecordingControls
         recordingState={recordingState}
         recordingTime={recordingTime}
-        onToggleRecording={handleToggleRecording}
-        onGallery={handleReloadEffect}
-        onSwitchCamera={handleSwitchCamera}
+        onToggleRecording={() => {
+          const canvas = getCanvas();
+          const stream = getStream();
+          if (canvas && stream) {
+            toggleRecording(canvas, stream);
+          }
+        }}
+        onGallery={() => reloadLens()}
+        onSwitchCamera={() => switchCamera()}
         formatTime={formatTime}
         disabled={!isReady}
       />
@@ -586,8 +359,14 @@ const CameraApp: React.FC = () => {
         <ErrorScreen
           errorInfo={errorInfo}
           permissionState={permissionState}
-          onRequestPermission={handleRequestPermission}
-          onRetry={handleRetry}
+          onRequestPermission={async () => {
+            const stream = await requestPermission();
+            if (stream) {
+              stream.getTracks().forEach(track => track.stop());
+              initializeApp();
+            }
+          }}
+          onRetry={initializeApp}
           debugInfo={{
             protocol: location.protocol,
             hostname: location.hostname,
