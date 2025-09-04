@@ -44,8 +44,7 @@ function App() {
         try {
           addLog("Mounting login button");
           
-          // Use type assertion to tell TypeScript we've already checked this
-          (window.snap as any).loginkit.mountButton("snap-login-button", {
+          window.snap.loginkit.mountButton("snap-login-button", {
             clientId: import.meta.env.VITE_SNAPCHAT_CLIENT_ID,
             redirectURI: import.meta.env.VITE_SNAPCHAT_REDIRECT_URI,
             scopeList: [
@@ -61,7 +60,7 @@ function App() {
                 // Add delay before fetchUserInfo
                 await new Promise(resolve => setTimeout(resolve, 500));
                 
-                const result = await window.snap?.loginkit.fetchUserInfo();
+                const result = await window.snap.loginkit.fetchUserInfo();
                 const user = result?.data?.me;
                 
                 if (user) {
